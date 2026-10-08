@@ -7,7 +7,7 @@
 | `departments` | id, name, dept_head_employee_id, min_limit, max_limit |
 | `projects` | id, name, dept_id, project_mgr_employee_id, min_limit, max_limit |
 | `employees` | id, name, github_username, email, role, mgr_id, project_id, min_limit, max_limit |
-| `billing` | model, per_token_cost |
+| `billing` | model, per_token_cost (estimated blended USD per token) |
 | `copilot_usage` | id, github_username, tokens_consumed, model_used, usage_date (one row per request) |
 
 Roles: `exec` (5), `dept_head` (15), `project_manager` (135, one per project), `employee` (345).
@@ -29,8 +29,14 @@ Login is by email only for now (SSO later), so there is no credentials table.
 
 `node backend/db/generate_mock_data.js` (reproducible, seeded) writes `backend/db/seeds/`:
 500 employees, 15 departments, 135 projects (2-7 members each), 8 models, ~251k requests
-from 2026-04-01 to 2026-09-30 (usage ramps up month over month). Model names and per-token
-prices are illustrative, not real list prices. Change `END_DATE` in the script to move the window.
+from 2026-04-01 to 2026-09-30 (usage ramps up month over month). Estimated API cost uses public
+published standard model rates with an 80% input / 20% output mix because the mock usage stores
+only total tokens. The `gpt-5-codex` estimate uses the published `gpt-5.3-codex` rate; Gemini 2.5
+uses its last published standard rates. Cached-token discounts, plan discounts, and long-context
+pricing are excluded, so this is an estimate, not an invoice amount. Pricing references:
+[OpenAI](https://developers.openai.com/api/docs/pricing),
+[Anthropic](https://platform.claude.com/docs/en/about-claude/pricing), and
+[Google Gemini](https://ai.google.dev/gemini-api/docs/pricing). Change `END_DATE` in the script to move the window.
 
 ## Load it (Docker)
 

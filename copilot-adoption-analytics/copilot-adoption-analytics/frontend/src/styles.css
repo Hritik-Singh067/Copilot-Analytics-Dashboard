@@ -206,6 +206,7 @@ button, input { font: inherit; }
 .token-usage-row-clickable:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
 .model-usage-section { min-width: 0; margin-top: 38px; }
 .model-usage-chart-wrap { height: 330px; min-width: 0; padding: 17px; border: 1px solid #dedede; background: #fff; }
+.model-usage-credit-note { margin: 9px 0 0; color: var(--muted); font-size: 11px; font-weight: 700; font-style: italic; line-height: 1.5; text-align: center; }
 .section-title { margin-bottom: 17px; align-items: end; }
 .section-title h2 { margin: 7px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -.03em; }
 .section-title > span { color: var(--muted); font: 10px var(--mono); }

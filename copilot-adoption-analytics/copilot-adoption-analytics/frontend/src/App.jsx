@@ -346,6 +346,7 @@ function ModelUsageChart({ rows = [] }) {
     <section className="model-usage-section">
       <div className="section-title"><div><span className="eyebrow">{period.toUpperCase()} · ALL SCOPED REQUESTS</span><h2>Token usage by model</h2></div><span>{rows.length} MODELS</span></div>
       <div className="model-usage-chart-wrap"><Bar data={chartData} options={options} plugins={[creditLabelsPlugin]} /></div>
+      <p className="model-usage-credit-note">Estimated API cost = total tokens × published standard API rate, weighted 80% input / 20% output; cached tokens, plan discounts, and long-context pricing are excluded.</p>
     </section>
   );
 }

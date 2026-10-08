@@ -8,7 +8,8 @@ const MAX_HISTORY_TURNS = 6;
 const ALLOWED_ANALYTICS_KEYS = new Set([
   'period_start', 'period_end', 'employee', 'projects', 'employees',
   'department', 'departments', 'model_usage', 'id', 'name',
-  'token_limit', 'consumed_tokens', 'daily_usage', 'date', 'tokens', 'model'
+  'token_limit', 'consumed_tokens', 'daily_usage', 'date', 'tokens', 'model',
+  'per_token_cost'
 ]);
 const SYSTEM_PROMPT = [
   'You are the Copilot Usage Analytics assistant for this dashboard.',

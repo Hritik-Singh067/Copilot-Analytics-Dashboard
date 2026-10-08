@@ -28,12 +28,14 @@ test('sanitizes chart context to analytics fields and excludes personal data', (
   const sanitized = sanitizeAnalytics({
     period_start: '2026-09-01',
     employee: { name: 'Sam', email: 'sam@example.com', consumed_tokens: 42 },
+    model_usage: [{ model: 'gpt-4.1', tokens: 1000, per_token_cost: 0.00001 }],
     data: [{ raw_prompt: 'do not send' }]
   });
 
   assert.deepEqual(sanitized, {
     period_start: '2026-09-01',
-    employee: { name: 'Sam', consumed_tokens: 42 }
+    employee: { name: 'Sam', consumed_tokens: 42 },
+    model_usage: [{ model: 'gpt-4.1', tokens: 1000, per_token_cost: 0.00001 }]
   });
 });
 

@@ -81,6 +81,45 @@ Notes: the full dept_head/exec response is ~30 MB (251k usage rows), so use `fro
 before putting it behind a UI. There is no token, so `user_id` is trusted as sent; add a session or SSO
 before this is used beyond a local prototype.
 
+## Analyze with AI
+
+The dashboard includes an **Analyze with AI** section for questions about the selected month's charts.
+The frontend sends the current pre-aggregated `token_analytics` object, question, selected month, and
+up to six previous Q&A turns to `POST /api/ai/analyze`. The backend verifies that the user ID exists,
+removes unrelated fields such as email addresses from the analytics context, and asks Google's Gemini
+API to answer using that context. It does not send raw usage events or give the
+model direct SQL/database access.
+
+Configure these values in `backend/.env`:
+
+```env
+GEMINI_API_KEY=your-google-ai-studio-api-key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+The API key is used only by the backend and must not be added to the frontend environment. If it is not
+configured, the endpoint returns `503` and the UI displays a setup message. The endpoint is
+`POST /api/ai/analyze` and accepts `userId`, `question`, `analytics`, `month`, and optional `history`.
+It returns `{ "success": true, "answer": "..." }` on success. The full generated answer is written to
+the backend log and displayed in full in the dashboard; this feature does not log the question or
+analytics payload.
+
+The default `gemini-2.5-flash` model is selected for low-latency usage and availability on the Gemini API
+free tier; quotas and model availability depend on the Google AI Studio project and can change. If
+analysis fails, check the backend's structured `Gemini analysis request failed` log. It includes the
+provider HTTP status, error type/message, request ID, and configured model, with API key-like values
+redacted. Successful responses are logged separately as `Gemini analysis response`. Since application
+logs contain generated AI content, protect log access and retention appropriately. Common causes are
+an invalid API key, a model unavailable to the project (`404`), an invalid
+request (`400`), exhausted free-tier quota (`429`), or a temporary provider/network outage (`503` or no
+HTTP status). After changing `backend/.env`, restart the backend.
+
+**Prototype security limitation:** user identity is currently represented by a client-supplied ID and
+email-only login. This AI endpoint follows the same limitation as `/api/data`; add authenticated sessions
+or SSO, enforce role scope from the authenticated server-side identity, and apply request rate limits
+before exposing either API beyond a trusted local environment. Questions and aggregated analytics are
+sent to Google's Gemini API for inference.
+
 ## Frontend (React + Bootstrap)
 
 ```bash
@@ -89,5 +128,5 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 The frontend calls the backend at `http://localhost:4000` by default. Set `VITE_API_BASE_URL` to a different
 backend origin when needed. Sign in with an existing employee email; registration is not available through
-the current backend API. After login, the app requests `/api/data?user_id=<employee id>` and displays the
-response summary and full JSON payload.
+the current backend API. After login, the app requests `/api/data?user_id=<employee id>` and renders
+role-scoped monthly usage charts and the AI analysis panel.

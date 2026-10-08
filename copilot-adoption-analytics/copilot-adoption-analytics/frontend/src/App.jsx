@@ -368,6 +368,164 @@ function ModelUsageChart({ rows = [] }) {
   );
 }
 
+function formatAIInline(text) {
+  const tokens = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$\\frac\{[^{}]*\}\{[^{}]*\}\$|\\frac\{[^{}]*\}\{[^{}]*\})/g);
+  return tokens.map((token, index) => {
+    if (!token) return null;
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={index}>{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith('*') && token.endsWith('*')) {
+      return <em key={index}>{token.slice(1, -1)}</em>;
+    }
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return <code key={index}>{token.slice(1, -1)}</code>;
+    }
+    if (token.includes('\\frac')) {
+      const fraction = token.match(/\\frac\{([^{}]*)\}\{([^{}]*)\}/);
+      if (fraction) {
+        return <span className="ai-fraction" aria-label={`${fraction[1]} divided by ${fraction[2]}`} key={index}>
+          <span>{fraction[1]}</span><span>{fraction[2]}</span>
+        </span>;
+      }
+    }
+    return token;
+  });
+}
+
+function FormattedAIAnswer({ answer }) {
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let listType = '';
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push(<p key={`p-${blocks.length}`}>{formatAIInline(paragraph.join(' '))}</p>);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      const List = listType === 'ordered' ? 'ol' : 'ul';
+      blocks.push(<List key={`list-${blocks.length}`}>{list.map((item, index) => <li key={index}>{formatAIInline(item)}</li>)}</List>);
+      list = [];
+      listType = '';
+    }
+  };
+
+  answer.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    const bullet = line.match(/^[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push(<h3 key={`h-${blocks.length}`}>{formatAIInline(heading[1])}</h3>);
+    } else if (bullet || ordered) {
+      flushParagraph();
+      const nextListType = ordered ? 'ordered' : 'unordered';
+      if (list.length && listType !== nextListType) flushList();
+      listType = nextListType;
+      list.push((bullet || ordered)[1]);
+    } else {
+      flushList();
+      paragraph.push(line);
+    }
+  });
+  flushParagraph();
+  flushList();
+  return <div className="ai-answer-content">{blocks}</div>;
+}
+
+function AIAnalysisSection({ userId, role, analytics, month }) {
+  const [question, setQuestion] = useState('');
+  const [turns, setTurns] = useState([]);
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const submittedQuestion = question.trim();
+    if (!submittedQuestion || sending) return;
+    setError('');
+    setSending(true);
+    try {
+      const result = await request('/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          question: submittedQuestion,
+          analytics,
+          month,
+          history: turns.slice(-6).map(({ question: previousQuestion, answer }) => ({
+            question: previousQuestion,
+            answer
+          }))
+        })
+      });
+      setTurns((previousTurns) => [...previousTurns, { question: submittedQuestion, answer: result.answer }]);
+      setQuestion('');
+    } catch (requestError) {
+      setError(requestError.message === 'Failed to fetch'
+        ? 'Could not reach the AI service. Check that the backend is running.'
+        : requestError.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="ai-analysis-section" aria-labelledby="ai-analysis-title">
+      <div className="section-title">
+        <div>
+          <span className="eyebrow">USAGE INSIGHTS</span>
+          <h2 id="ai-analysis-title">Analyze with AI</h2>
+        </div>
+        <span>GROUNDED IN DASHBOARD DATA</span>
+      </div>
+      <p className="ai-analysis-intro">
+        Ask about usage trends, allocations, departments, projects, or model consumption for the selected month.
+      </p>
+      {turns.length > 0 && <div className="ai-conversation" aria-live="polite">
+        {turns.map((turn, index) => (
+          <article className="ai-turn" key={`${index}-${turn.question}`}>
+            <div className="ai-question"><span className="eyebrow">YOUR QUESTION</span><p>{turn.question}</p></div>
+            <div className="ai-answer"><span className="eyebrow">AI ANALYSIS</span><FormattedAIAnswer answer={turn.answer} /></div>
+          </article>
+        ))}
+      </div>}
+      {error && <div className="alert alert-danger ai-error" role="alert">{error}</div>}
+      <form className="ai-question-form" onSubmit={handleSubmit}>
+        <label className="form-label" htmlFor="ai-analysis-question">Your question</label>
+        <textarea
+          id="ai-analysis-question"
+          className="form-control"
+          rows="3"
+          maxLength="1000"
+          placeholder={`For example: What trends stand out for ${role.replaceAll('_', ' ')} usage this month?`}
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          disabled={sending}
+        />
+        <div className="ai-question-actions">
+          <span>Answers use the displayed {month || 'selected'} usage data.</span>
+          <button className="btn btn-access ai-submit" type="submit" disabled={sending || !question.trim()}>
+            {sending ? 'Analyzing…' : 'Ask AI'} <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function formatMonth(dateString) {
   if (!dateString) return 'Current month';
   return new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -768,6 +926,13 @@ function DataPage() {
           />}
 
           <ModelUsageChart rows={response.token_analytics?.model_usage} />
+          <AIAnalysisSection
+            key={`${user.id}-${response.filters?.month || selectedMonth || ''}`}
+            userId={user.id}
+            role={response.role}
+            analytics={response.token_analytics || {}}
+            month={response.filters?.month || selectedMonth}
+          />
         </>}
       </section>
       <footer className="data-footer"><span>COPILOT ADOPTION ANALYTICS</span><span>DATA IS SCOPED TO YOUR ROLE</span></footer>

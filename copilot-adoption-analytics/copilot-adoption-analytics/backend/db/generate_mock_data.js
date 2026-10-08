@@ -109,15 +109,17 @@ const CODE_ADJ = ['Azure','Crimson','Golden','Silver','Amber','Cobalt','Onyx','J
 const CODE_NOUN = ['Falcon','Orion','Atlas','Phoenix','Nova','Titan','Aurora','Comet','Raven','Lynx','Pegasus','Vega'];
 
 // ---------------- models + billing ----------------
+// Estimated USD per token using public standard API rates and an 80% input /
+// 20% output mix. This is a blended estimate; usage records do not split token types.
 const MODELS = [
-  { model: 'claude-haiku-5.5',  cost: 0.0000020, big: false },
-  { model: 'claude-sonnet-5.5', cost: 0.0000090, big: false },
-  { model: 'claude-opus-5.5',   cost: 0.0000300, big: true },
-  { model: 'gpt-5',             cost: 0.0000060, big: false },
-  { model: 'gpt-5-codex',       cost: 0.0000070, big: false },
-  { model: 'gpt-5-mini',        cost: 0.0000012, big: false },
-  { model: 'gemini-2.5-pro',    cost: 0.0000065, big: false },
-  { model: 'gemini-2.5-flash',  cost: 0.0000015, big: false }
+  { model: 'claude-haiku-5.5',  cost: 0.00000018, big: false },
+  { model: 'claude-sonnet-5.5', cost: 0.00000360, big: false },
+  { model: 'claude-opus-5.5',   cost: 0.00000720, big: true },
+  { model: 'gpt-5',             cost: 0.00000300, big: false },
+  { model: 'gpt-5-codex',       cost: 0.00000420, big: false },
+  { model: 'gpt-5-mini',        cost: 0.00000060, big: false },
+  { model: 'gemini-2.5-pro',    cost: 0.00000300, big: false },
+  { model: 'gemini-2.5-flash',  cost: 0.00000074, big: false }
 ];
 const MODEL_W_TECH = { 'claude-sonnet-5.5': 28, 'gpt-5-codex': 20, 'gpt-5': 13, 'claude-opus-5.5': 8, 'claude-haiku-5.5': 9, 'gemini-2.5-pro': 8, 'gpt-5-mini': 7, 'gemini-2.5-flash': 7 };
 const MODEL_W_BIZ  = { 'gpt-5': 24, 'claude-sonnet-5.5': 24, 'claude-haiku-5.5': 18, 'gpt-5-mini': 12, 'gemini-2.5-flash': 10, 'gemini-2.5-pro': 8, 'claude-opus-5.5': 3, 'gpt-5-codex': 1 };
@@ -305,7 +307,7 @@ function batch(table, cols, rows, size) {
   return out;
 }
 
-write('01_billing.sql', `${MODELS.length} models (illustrative blended USD per token)`,
+write('01_billing.sql', `${MODELS.length} models (estimated USD per token; 80% input / 20% output public API rates)`,
   batch('billing', ['model', 'per_token_cost'], MODELS.map((m) => [m.model, m.cost]), 100));
 
 write('02_departments.sql', `${departments.length} departments (dept_head_employee_id is linked in 06_link_heads.sql)`,

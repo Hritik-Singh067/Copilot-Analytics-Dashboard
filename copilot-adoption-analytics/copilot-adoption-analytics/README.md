@@ -7,7 +7,7 @@
 | `departments` | id, name, dept_head_employee_id, min_limit, max_limit |
 | `projects` | id, name, dept_id, project_mgr_employee_id, min_limit, max_limit |
 | `employees` | id, name, github_username, email, role, mgr_id, project_id, min_limit, max_limit |
-| `billing` | model, per_token_cost |
+| `billing` | model, per_token_cost (estimated blended USD per token) |
 | `copilot_usage` | id, github_username, tokens_consumed, model_used, usage_date (one row per request) |
 
 Roles: `exec` (5), `dept_head` (15), `project_manager` (135, one per project), `employee` (345).
@@ -29,8 +29,16 @@ Login is by email only for now (SSO later), so there is no credentials table.
 
 `node backend/db/generate_mock_data.js` (reproducible, seeded) writes `backend/db/seeds/`:
 500 employees, 15 departments, 135 projects (2-7 members each), 8 models, ~251k requests
-from 2026-04-01 to 2026-09-30 (usage ramps up month over month). Model names and per-token
-prices are illustrative, not real list prices. Change `END_DATE` in the script to move the window.
+from 2026-04-01 to 2026-09-30 (usage ramps up month over month). Estimated API cost uses public
+published standard model rates with an 80% input / 20% output mix because the mock usage stores
+only total tokens. The `gpt-5-codex` estimate uses the published `gpt-5.3-codex` rate; Gemini 2.5
+uses its last published standard rates. Cached-token discounts, plan discounts, and long-context
+pricing are excluded, so this is an estimate, not an invoice amount. Pricing references:
+[OpenAI](https://developers.openai.com/api/docs/pricing),
+[Anthropic](https://platform.claude.com/docs/en/about-claude/pricing), and
+[Google Gemini](https://ai.google.dev/gemini-api/docs/pricing). Change `END_DATE` in the script to move the window.
+The existing `05_copilot_usage.sql` seed also includes mock requests for October 1-9, 2026, with
+October request sizes about 10% higher than the initial sample.
 
 ## Load it (Docker)
 
@@ -64,9 +72,53 @@ No password or token for now.
 The response also carries `role`, `user`, `filters` and `counts`. `from`/`to` only narrow `copilot_usage`.
 `400` for a bad `user_id` or dates, `404` for an unknown user.
 
+Executive users can drill into a department and then its projects; executive, department-head, and project-manager
+users can open their authorized project and see its employee allocations. The dashboard month selector applies
+through each level of the hierarchy. These detail views use **`GET /api/data/departments/:departmentId`** and
+**`GET /api/data/projects/:projectId`**, with `user_id` and optional `month=YYYY-MM` query parameters.
+
 Notes: the full dept_head/exec response is ~30 MB (251k usage rows), so use `from`/`to` or add pagination
 before putting it behind a UI. There is no token, so `user_id` is trusted as sent; add a session or SSO
 before this is used beyond a local prototype.
+
+## Analyze with AI
+
+The dashboard includes an **Analyze with AI** section for questions about the selected month's charts.
+The frontend sends the current pre-aggregated `token_analytics` object, question, selected month, and
+up to six previous Q&A turns to `POST /api/ai/analyze`. The backend verifies that the user ID exists,
+removes unrelated fields such as email addresses from the analytics context, and asks Google's Gemini
+API to answer using that context. It does not send raw usage events or give the
+model direct SQL/database access.
+
+Configure these values in `backend/.env`:
+
+```env
+GEMINI_API_KEY=your-google-ai-studio-api-key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+The API key is used only by the backend and must not be added to the frontend environment. If it is not
+configured, the endpoint returns `503` and the UI displays a setup message. The endpoint is
+`POST /api/ai/analyze` and accepts `userId`, `question`, `analytics`, `month`, and optional `history`.
+It returns `{ "success": true, "answer": "..." }` on success. The full generated answer is written to
+the backend log and displayed in full in the dashboard; this feature does not log the question or
+analytics payload.
+
+The default `gemini-2.5-flash` model is selected for low-latency usage and availability on the Gemini API
+free tier; quotas and model availability depend on the Google AI Studio project and can change. If
+analysis fails, check the backend's structured `Gemini analysis request failed` log. It includes the
+provider HTTP status, error type/message, request ID, and configured model, with API key-like values
+redacted. Successful responses are logged separately as `Gemini analysis response`. Since application
+logs contain generated AI content, protect log access and retention appropriately. Common causes are
+an invalid API key, a model unavailable to the project (`404`), an invalid
+request (`400`), exhausted free-tier quota (`429`), or a temporary provider/network outage (`503` or no
+HTTP status). After changing `backend/.env`, restart the backend.
+
+**Prototype security limitation:** user identity is currently represented by a client-supplied ID and
+email-only login. This AI endpoint follows the same limitation as `/api/data`; add authenticated sessions
+or SSO, enforce role scope from the authenticated server-side identity, and apply request rate limits
+before exposing either API beyond a trusted local environment. Questions and aggregated analytics are
+sent to Google's Gemini API for inference.
 
 ## Frontend (React + Bootstrap)
 
@@ -76,5 +128,5 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 The frontend calls the backend at `http://localhost:4000` by default. Set `VITE_API_BASE_URL` to a different
 backend origin when needed. Sign in with an existing employee email; registration is not available through
-the current backend API. After login, the app requests `/api/data?user_id=<employee id>` and displays the
-response summary and full JSON payload.
+the current backend API. After login, the app requests `/api/data?user_id=<employee id>` and renders
+role-scoped monthly usage charts and the AI analysis panel.

@@ -251394,3 +251394,40 @@ INSERT INTO copilot_usage (github_username, tokens_consumed, model_used, usage_d
 ('ashah2', 37294, 'gemini-2.5-pro', '2026-09-23'),
 ('ashah2', 19990, 'gemini-2.5-pro', '2026-09-23'),
 ('ashah2', 67282, 'claude-haiku-5.5', '2026-09-28');
+
+-- Mock Copilot requests for October 1-9, 2026; re-running this seed will not duplicate them.
+WITH employee_days AS MATERIALIZED (
+  SELECT e.github_username,
+         days.usage_day::date AS usage_date,
+         random() AS activity_roll,
+         random() AS model_roll,
+         (1 + floor(random() * 4))::integer AS request_count
+  FROM employees e
+  CROSS JOIN generate_series(DATE '2026-10-01', DATE '2026-10-09', INTERVAL '1 day')
+    AS days(usage_day)
+)
+INSERT INTO copilot_usage (github_username, tokens_consumed, model_used, usage_date)
+SELECT daily.github_username,
+       (1100 + floor(random() * 31901))::integer,
+       CASE
+         WHEN daily.model_roll < 0.24 THEN 'claude-sonnet-5.5'
+         WHEN daily.model_roll < 0.40 THEN 'gpt-5-codex'
+         WHEN daily.model_roll < 0.56 THEN 'gpt-5'
+         WHEN daily.model_roll < 0.64 THEN 'claude-opus-5.5'
+         WHEN daily.model_roll < 0.76 THEN 'claude-haiku-5.5'
+         WHEN daily.model_roll < 0.85 THEN 'gpt-5-mini'
+         WHEN daily.model_roll < 0.93 THEN 'gemini-2.5-pro'
+         ELSE 'gemini-2.5-flash'
+       END,
+       daily.usage_date
+FROM employee_days daily
+CROSS JOIN LATERAL generate_series(1, daily.request_count) AS requests(request_no)
+WHERE daily.activity_roll < CASE
+        WHEN extract(isodow FROM daily.usage_date) IN (6, 7) THEN 0.22
+        ELSE 0.68
+      END
+  AND NOT EXISTS (
+    SELECT 1
+    FROM copilot_usage existing
+    WHERE existing.usage_date BETWEEN DATE '2026-10-01' AND DATE '2026-10-09'
+  );

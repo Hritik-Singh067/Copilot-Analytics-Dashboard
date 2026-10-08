@@ -154,9 +154,127 @@ function dataHandler(db) {
   };
 }
 
+function getAnalyticsMonth(month) {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const previousMonthDate = new Date(`${currentMonth}-01T00:00:00Z`);
+  previousMonthDate.setUTCMonth(previousMonthDate.getUTCMonth() - 1);
+  const selectedMonth = month || previousMonthDate.toISOString().slice(0, 7);
+  if (selectedMonth > currentMonth) return null;
+  return { selectedMonth, monthStart: `${selectedMonth}-01` };
+}
+
+function validateAnalyticsRequest(req, res, idParam) {
+  const userId = Number(req.query.user_id);
+  const targetId = Number(req.params[idParam]);
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(targetId) || targetId <= 0) {
+    res.status(400).json({ success: false, message: `A valid user_id and ${idParam} are required` });
+    return null;
+  }
+  const { month } = req.query;
+  if (month && !MONTH_RE.test(month)) {
+    res.status(400).json({ success: false, message: 'month must be YYYY-MM' });
+    return null;
+  }
+  const monthContext = getAnalyticsMonth(month);
+  if (!monthContext) {
+    res.status(400).json({ success: false, message: 'month cannot be in the future' });
+    return null;
+  }
+  return { userId, targetId, ...monthContext };
+}
+
+function departmentAnalyticsHandler(db) {
+  return async (req, res) => {
+    const context = validateAnalyticsRequest(req, res, 'departmentId');
+    if (!context) return;
+    try {
+      const user = await q.findEmployeeById(db, context.userId);
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+      if (user.role !== 'exec') return res.status(403).json({ success: false, message: 'Executive access is required' });
+      const department = (await q.allDepartments(db)).find((item) => item.id === context.targetId);
+      if (!department) return res.status(404).json({ success: false, message: 'Department not found' });
+      const [analytics, model_usage, available_months] = await Promise.all([
+        q.monthlyAnalyticsForDepartmentHead(db, department.dept_head_employee_id, context.monthStart),
+        q.monthlyModelUsage(db, 'department', department.dept_head_employee_id, context.monthStart),
+        q.availableUsageMonths(db)
+      ]);
+      if (!analytics) return res.status(404).json({ success: false, message: 'Department analytics are not available' });
+      return res.json({
+        success: true,
+        department: {
+          id: analytics.id,
+          name: analytics.name,
+          token_limit: analytics.token_limit,
+          consumed_tokens: analytics.consumed_tokens,
+          daily_usage: analytics.daily_usage
+        },
+        projects: analytics.projects,
+        model_usage,
+        period_start: analytics.period_start,
+        period_end: analytics.period_end,
+        available_months,
+        filters: { month: context.selectedMonth }
+      });
+    } catch (err) {
+      console.error('department analytics error', err);
+      return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  };
+}
+
+function projectAnalyticsHandler(db) {
+  return async (req, res) => {
+    const context = validateAnalyticsRequest(req, res, 'projectId');
+    if (!context) return;
+    try {
+      const user = await q.findEmployeeById(db, context.userId);
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+      const project = await q.projectById(db, context.targetId);
+      if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
+      const department = (await q.allDepartments(db)).find((item) => item.id === project.dept_id);
+      if (!department) return res.status(404).json({ success: false, message: 'Department not found' });
+
+      if (user.role === 'project_manager' && project.project_mgr_employee_id !== user.id) {
+        return res.status(403).json({ success: false, message: 'Project access is required' });
+      }
+      if (user.role === 'dept_head' && department.dept_head_employee_id !== user.id) {
+        return res.status(403).json({ success: false, message: 'Department access is required' });
+      }
+      if (!['exec', 'dept_head', 'project_manager'].includes(user.role)) {
+        return res.status(403).json({ success: false, message: 'Project access is required' });
+      }
+
+      const [departmentAnalytics, employees, model_usage, available_months] = await Promise.all([
+        q.monthlyAnalyticsForDepartmentHead(db, department.dept_head_employee_id, context.monthStart),
+        q.monthlyEmployeesForProject(db, project.id, context.monthStart),
+        q.monthlyModelUsage(db, 'project', project.id, context.monthStart),
+        q.availableUsageMonths(db)
+      ]);
+      const projectAnalytics = departmentAnalytics?.projects.find((item) => item.id === project.id);
+      if (!projectAnalytics) return res.status(404).json({ success: false, message: 'Project analytics are not available' });
+      return res.json({
+        success: true,
+        project: projectAnalytics,
+        department: { id: department.id, name: department.name },
+        employees,
+        model_usage,
+        period_start: departmentAnalytics.period_start,
+        period_end: departmentAnalytics.period_end,
+        available_months,
+        filters: { month: context.selectedMonth }
+      });
+    } catch (err) {
+      console.error('project analytics error', err);
+      return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  };
+}
+
 module.exports = (db) => {
   const router = express.Router();
   router.get('/', dataHandler(db));
+  router.get('/departments/:departmentId', departmentAnalyticsHandler(db));
+  router.get('/projects/:projectId', projectAnalyticsHandler(db));
   return router;
 };
 module.exports.dataHandler = dataHandler;

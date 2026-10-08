@@ -452,14 +452,6 @@ function LoginPage() {
 
   return (
     <main className="auth-shell">
-      <section className="auth-aside" aria-label="Product information">
-        <div className="aside-copy">
-          <div className="eyebrow"><span className="status-dot" /> ADOPTION INTELLIGENCE</div>
-          <h1>Make usage<br />visible.</h1>
-          <p>A clear view of how your organization is putting Copilot to work.</p>
-        </div>
-      </section>
-
       <section className="auth-main">
         <div className="auth-topline">
           <img className="brand-logo" src={societeGeneraleLogo} alt="Société Générale" />

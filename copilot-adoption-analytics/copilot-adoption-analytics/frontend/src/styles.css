@@ -134,7 +134,8 @@ button, input { font: inherit; }
 .token-chart-values strong { color: var(--ink); font: 500 11px var(--mono); }
 .legend-swatch { width: 8px; height: 8px; display: inline-block; background: var(--red); }
 .legend-swatch.remaining { background: #e7e7e7; border: 1px solid #ccc; }
-.over-limit-note { margin-top: 12px; padding: 8px 9px; color: #a10d23; background: #fbebed; font-size: 10px; }
+.allocation-balance { margin-top: 12px; padding: 8px 9px; color: #424b44; background: #f3f5f2; font: 10px var(--mono); text-align: center; }
+.allocation-balance-over { color: #a10d23; background: #fbebed; }
 .analytics-carousel { display: grid; grid-template-columns: 52px minmax(260px, 340px) minmax(0, 1fr); align-items: stretch; gap: 16px; }
 .analytics-carousel > .daily-chart-panel { height: 100%; }
 .project-switcher { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -156,10 +157,12 @@ button, input { font: inherit; }
 .crossing-date strong { color: #2463eb; font-size: 12px; }
 .daily-chart-canvas { height: 320px; min-width: 0; position: relative; }
 .daily-extremes { margin-top: 13px; padding-top: 12px; border-top: 1px solid #e6e6e6; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.daily-extremes.forecast-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .daily-extremes > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .daily-extremes span { color: #707070; font: 8px var(--mono); letter-spacing: .03em; }
 .daily-extremes strong { color: var(--ink); font: 500 13px var(--mono); }
 .daily-extremes .min-usage { color: #2463eb; }
+.daily-extremes .forecast-balance-over strong { color: var(--red); }
 .usage-limit-warning { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border: 1px solid #efc2c8; color: #8f1022; background: #fff4f5; }
 .usage-warning-icon { flex: 0 0 26px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--red); font-size: 16px; font-weight: 700; }
 .usage-limit-warning > div:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }

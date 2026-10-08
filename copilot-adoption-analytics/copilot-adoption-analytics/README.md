@@ -37,6 +37,8 @@ pricing are excluded, so this is an estimate, not an invoice amount. Pricing ref
 [OpenAI](https://developers.openai.com/api/docs/pricing),
 [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing), and
 [Google Gemini](https://ai.google.dev/gemini-api/docs/pricing). Change `END_DATE` in the script to move the window.
+The existing `05_copilot_usage.sql` seed also includes mock requests for October 1-9, 2026, with
+October request sizes about 10% higher than the initial sample.
 
 ## Load it (Docker)
 

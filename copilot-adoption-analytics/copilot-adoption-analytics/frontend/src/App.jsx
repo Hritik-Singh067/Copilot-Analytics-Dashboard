@@ -61,7 +61,7 @@ function TokenPieCard({ title, subtitle, consumed, limit, onClick }) {
       onKeyDown={onClick ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick(); } } : undefined}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      aria-label={onClick ? `${title}, open daily usage detail` : undefined}
+      aria-label={onClick ? `View ${title} usage details` : undefined}
     >
       <div className="token-chart-heading"><span className="eyebrow">MONTHLY ALLOCATION</span><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>
       <div className="token-chart-visual">
@@ -72,8 +72,13 @@ function TokenPieCard({ title, subtitle, consumed, limit, onClick }) {
         <div><span><i className="legend-swatch used" />Consumed</span><strong>{used.toLocaleString()}</strong></div>
         <div><span><i className="legend-swatch remaining" />Limit</span><strong>{allocation.toLocaleString()}</strong></div>
       </div>
-      {used > allocation && <div className="over-limit-note">Over allocation by {(used - allocation).toLocaleString()} tokens</div>}
-      {onClick && <div className="chart-detail-link">OPEN DAILY DETAIL <span aria-hidden="true">↗</span></div>}
+      <div className={`allocation-balance${used > allocation ? ' allocation-balance-over' : ''}`}>
+        {allocation > 0
+          ? used > allocation
+            ? `${(used - allocation).toLocaleString()} additional tokens needed`
+            : `${(allocation - used).toLocaleString()} tokens remaining`
+          : 'No allocation set'}
+      </div>
     </article>
   );
 }
@@ -108,7 +113,8 @@ function DailyUsageChart({ series = [], limit, modelUsage = [], compact = false 
   const costedTokens = modelUsage.reduce((sum, model) => sum + (Number(model.tokens) || 0), 0);
   const costPerToken = costedTokens > 0 ? weightedCost / costedTokens : null;
   const projectedOverage = Math.max(0, predictedMonthUsage - tokenLimit);
-  const willExceedLimit = showForecast && tokenLimit > 0 && predictedMonthUsage >= tokenLimit;
+  const projectedRemaining = Math.max(0, tokenLimit - predictedMonthUsage);
+  const willExceedLimit = tokenLimit > 0 && predictedMonthUsage > tokenLimit;
   const exhaustionDay = dailyAverage > 0 ? Math.ceil(tokenLimit / dailyAverage) : null;
   const exhaustionDate = exhaustionDay && exhaustionDay <= daysInMonth
     ? new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), exhaustionDay))
@@ -140,11 +146,10 @@ function DailyUsageChart({ series = [], limit, modelUsage = [], compact = false 
         pointBackgroundColor: '#2463eb',
         pointBorderColor: '#fff',
         pointBorderWidth: 1,
-        pointRadius: 2.5,
-        pointHoverRadius: 6,
+        pointRadius: 0,
+        pointHoverRadius: 0,
         pointHitRadius: 10,
         borderWidth: 2,
-        borderDash: [5, 5],
         tension: 0,
       }] : [])
     ]
@@ -180,13 +185,19 @@ function DailyUsageChart({ series = [], limit, modelUsage = [], compact = false 
       <div className="daily-extremes forecast-summary">
         <div><span>{showForecast ? 'PREDICTED MONTH USAGE' : 'MONTH TOTAL'}</span><strong>{Math.round(predictedMonthUsage).toLocaleString()}</strong></div>
         <div><span>AVERAGE PER DAY</span><strong>{Math.round(dailyAverage).toLocaleString()}</strong></div>
+        <div className={projectedOverage > 0 ? 'forecast-balance-over' : ''}>
+          <span>{projectedOverage > 0
+            ? showForecast ? 'EXTRA TOKENS TO ALLOCATE' : 'EXTRA TOKENS OVER LIMIT'
+            : showForecast ? 'TOKENS LEFT AFTER FORECAST' : 'TOKENS LEFT VS LIMIT'}</span>
+          <strong>{tokenLimit > 0 ? Math.round(projectedOverage > 0 ? projectedOverage : projectedRemaining).toLocaleString() : 'No allocation'}</strong>
+        </div>
       </div>
       {willExceedLimit && <div className="usage-limit-warning" role="status">
         <span className="usage-warning-icon" aria-hidden="true">⚠</span>
-        <div><strong>{total >= tokenLimit ? 'Monthly token allocation exceeded' : `Token allocation projected to run out${exhaustionDate ? ` by ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(exhaustionDate)}` : ' this month'}`}</strong>
-          <span>Estimated month-end overage: {Math.round(projectedOverage).toLocaleString()} tokens</span>
+        <div><strong>{total >= tokenLimit ? 'Monthly token allocation exceeded' : `Token allocation projected to run out${showForecast && exhaustionDate ? ` by ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(exhaustionDate)}` : ' this month'}`}</strong>
+          <span>Additional allocation needed: {Math.round(projectedOverage).toLocaleString()} tokens</span>
         </div>
-        {costPerToken !== null && <div className="usage-overage-cost"><span aria-hidden="true">$</span><div><strong>{formatCurrency(projectedOverage * costPerToken)}</strong><small>EST. ADDITIONAL COST</small></div></div>}
+        {costPerToken !== null && <div className="usage-overage-cost"><span aria-hidden="true">$</span><div><strong>{formatCurrency(projectedOverage * costPerToken)}</strong><small>EST. ADDITIONAL AI CREDIT</small></div></div>}
       </div>}
     </section>
   );
@@ -239,7 +250,7 @@ function TokenUsageTable({ title, category, period, rows, onOpen }) {
       </div>
       <div className="table-responsive token-usage-table-wrap">
         <table className="table token-usage-table align-middle mb-0">
-          <thead><tr><th scope="col">{category}</th><th scope="col">Usage vs allocation</th><th scope="col" className="text-end">Consumed</th><th scope="col" className="text-end">Max allocation</th></tr></thead>
+          <thead><tr><th scope="col">{category}</th><th scope="col">Usage vs allocation</th><th scope="col" className="text-end">Consumed</th><th scope="col" className="text-end">Max allocation</th><th scope="col" className="text-end">Remaining / needed</th></tr></thead>
           <tbody>
             {sortedRows.map((row) => {
               const consumed = Math.max(0, Number(row.consumed_tokens) || 0);
@@ -247,6 +258,11 @@ function TokenUsageTable({ title, category, period, rows, onOpen }) {
               const percent = allocation ? consumed / allocation * 100 : 0;
               const cappedPercent = Math.min(100, percent);
               const overLimit = consumed > allocation;
+              const balance = allocation > 0
+                ? overLimit
+                  ? `${(consumed - allocation).toLocaleString()} needed`
+                  : `${(allocation - consumed).toLocaleString()} left`
+                : 'No allocation';
               return (
                 <tr
                   key={row.id}
@@ -267,6 +283,7 @@ function TokenUsageTable({ title, category, period, rows, onOpen }) {
                   </td>
                   <td className="text-end token-usage-number">{consumed.toLocaleString()}{overLimit && <span className="usage-over-badge">OVER</span>}</td>
                   <td className="text-end token-usage-number">{allocation.toLocaleString()}</td>
+                  <td className={`text-end token-usage-number ${overLimit ? 'usage-percent-over' : ''}`}>{balance}</td>
                 </tr>
               );
             })}
@@ -390,7 +407,7 @@ function ExecutiveDepartmentCarousel({ analytics, onOpen }) {
           limit={department.token_limit}
           onClick={() => onOpen(department)}
         />
-        <DailyUsageChart series={department.daily_usage} limit={department.token_limit} compact />
+        <DailyUsageChart series={department.daily_usage} limit={department.token_limit} modelUsage={analytics.model_usage} compact />
       </>}
     </AnalyticsCarousel>
   );
@@ -719,7 +736,7 @@ function DataPage() {
               return <AnalyticsCarousel items={projects} selectedIndex={selectedIndex} onSelect={setProjectIndex} itemLabel="project">
                 {(project) => <>
                 <TokenPieCard title={project.name} subtitle="Combined usage for all project employees" consumed={project.consumed_tokens} limit={project.token_limit} onClick={() => navigate(`/usage/project/${project.id}?month=${encodeURIComponent(selectedMonth || response.token_analytics.period_start.slice(0, 7))}`)} />
-                <DailyUsageChart series={project.daily_usage} limit={project.token_limit} />
+                <DailyUsageChart series={project.daily_usage} limit={project.token_limit} modelUsage={response.token_analytics.model_usage} />
                 </>}
               </AnalyticsCarousel>;
             })() : <div className="analytics-empty">No projects are currently assigned to this manager.</div>}
@@ -734,7 +751,7 @@ function DataPage() {
                 consumed={response.token_analytics.department.consumed_tokens}
                 limit={response.token_analytics.department.token_limit}
               />
-              <DailyUsageChart series={response.token_analytics.department.daily_usage} limit={response.token_analytics.department.token_limit} />
+              <DailyUsageChart series={response.token_analytics.department.daily_usage} limit={response.token_analytics.department.token_limit} modelUsage={response.token_analytics.model_usage} />
             </div>
             <div className="section-title project-breakdown-title"><div><span className="eyebrow">PROJECT BREAKDOWN</span><h2>Consumption by project</h2></div></div>
             {response.token_analytics.projects.length ? (() => {
@@ -744,7 +761,7 @@ function DataPage() {
               return <AnalyticsCarousel items={projects} selectedIndex={selectedIndex} onSelect={setDepartmentProjectIndex} itemLabel="department project">
                 {(project) => <>
                 <TokenPieCard title={project.name} subtitle="Project team usage" consumed={project.consumed_tokens} limit={project.token_limit} />
-                <DailyUsageChart series={project.daily_usage} limit={project.token_limit} compact />
+                <DailyUsageChart series={project.daily_usage} limit={project.token_limit} modelUsage={response.token_analytics.model_usage} compact />
                 </>}
               </AnalyticsCarousel>;
             })() : <div className="analytics-empty">No projects are currently assigned to this department.</div>}

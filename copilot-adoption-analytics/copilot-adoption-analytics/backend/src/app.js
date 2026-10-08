@@ -3,7 +3,7 @@ const cors = require('cors');
 const pool = require('./db/pool');
 
 const app = express();
-const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://localhost:4173')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);

@@ -90,6 +90,7 @@ async function monthlyModelUsage(db, scope, scopeValue, monthStart) {
        GROUP BY u.model_used
      )
      SELECT b.model, COALESCE(model_usage.tokens, 0)::BIGINT AS tokens,
+            b.per_token_cost,
             to_char(period.period_start, 'YYYY-MM-DD') AS period_start,
             to_char(period.period_end, 'YYYY-MM-DD') AS period_end
      FROM billing b

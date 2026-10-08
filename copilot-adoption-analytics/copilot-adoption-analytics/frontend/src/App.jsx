@@ -77,10 +77,9 @@ function TokenPieCard({ title, subtitle, consumed, limit, onClick }) {
   );
 }
 
-function DailyUsageChart({ series = [], limit, compact = false }) {
+function DailyUsageChart({ series = [], limit, modelUsage = [], compact = false }) {
   const values = series.map((point) => Number(point.tokens) || 0);
   const total = values.reduce((sum, value) => sum + value, 0);
-  const cumulativeValues = values.map((value, index) => values.slice(0, index + 1).reduce((sum, dailyValue) => sum + dailyValue, 0));
   const firstDate = series[0]?.date;
   const monthName = series.length ? formatMonth(series[0].date) : 'Usage period';
   const selectedMonth = firstDate?.slice(0, 7);
@@ -88,23 +87,38 @@ function DailyUsageChart({ series = [], limit, compact = false }) {
   const showForecast = selectedMonth === currentMonth;
   const monthStart = firstDate ? new Date(`${firstDate.slice(0, 7)}-01T00:00:00Z`) : new Date();
   const daysInMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
-  const dailyAverage = series.length ? total / series.length : 0;
-  const monthEndEstimate = showForecast ? dailyAverage * daysInMonth : total;
+  const elapsedDays = series.length ? new Date(`${series[series.length - 1].date}T00:00:00Z`).getUTCDate() : 0;
+  const dailyAverage = elapsedDays ? total / elapsedDays : 0;
+  const predictedMonthUsage = showForecast ? total + dailyAverage * (daysInMonth - elapsedDays) : total;
   const tokenLimit = Math.max(0, Number(limit) || 0);
-  const actualCumulativeByDay = Array(daysInMonth + 1).fill(null);
-  series.forEach((point, index) => {
+  const actualUsageByDay = Array(daysInMonth).fill(null);
+  let cumulativeUsage = 0;
+  series.forEach((point) => {
     const dayOfMonth = new Date(`${point.date}T00:00:00Z`).getUTCDate();
-    actualCumulativeByDay[dayOfMonth] = cumulativeValues[index];
+    cumulativeUsage += Number(point.tokens) || 0;
+    actualUsageByDay[dayOfMonth - 1] = cumulativeUsage;
   });
-  const labels = Array.from({ length: daysInMonth + 1 }, (_, day) => day);
-  const projectedCumulative = labels.map((day) => dailyAverage * day);
-  const chartLimit = tokenLimit > 0 ? tokenLimit : Math.max(1, total, monthEndEstimate);
+  const labels = Array.from({ length: daysInMonth }, (_, day) => day + 1);
+  const projectedUsage = labels.map((day) => showForecast && day >= elapsedDays
+    ? total + dailyAverage * (day - elapsedDays)
+    : null);
+  const chartLimit = tokenLimit > 0 ? tokenLimit : Math.max(1, total, predictedMonthUsage) * 1.1;
+  const weightedCost = modelUsage.reduce((sum, model) => sum + (Number(model.tokens) || 0) * (Number(model.per_token_cost) || 0), 0);
+  const costedTokens = modelUsage.reduce((sum, model) => sum + (Number(model.tokens) || 0), 0);
+  const costPerToken = costedTokens > 0 ? weightedCost / costedTokens : null;
+  const projectedOverage = Math.max(0, predictedMonthUsage - tokenLimit);
+  const willExceedLimit = showForecast && tokenLimit > 0 && predictedMonthUsage >= tokenLimit;
+  const exhaustionDay = dailyAverage > 0 ? Math.ceil(tokenLimit / dailyAverage) : null;
+  const exhaustionDate = exhaustionDay && exhaustionDay <= daysInMonth
+    ? new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), exhaustionDay))
+    : null;
+  const formatCurrency = (amount) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
   const chartData = {
     labels,
     datasets: [
       {
-        label: 'Actual cumulative usage',
-        data: actualCumulativeByDay,
+        label: 'Actual usage',
+        data: actualUsageByDay,
         borderColor: '#c8102e',
         backgroundColor: '#c8102e',
         pointBackgroundColor: '#c8102e',
@@ -118,8 +132,8 @@ function DailyUsageChart({ series = [], limit, compact = false }) {
         spanGaps: false
       },
       ...(showForecast ? [{
-        label: 'Predicted cumulative usage',
-        data: projectedCumulative,
+        label: 'Projected usage',
+        data: projectedUsage,
         borderColor: '#2463eb',
         backgroundColor: '#2463eb',
         pointBackgroundColor: '#2463eb',
@@ -141,40 +155,38 @@ function DailyUsageChart({ series = [], limit, compact = false }) {
     plugins: {
       legend: { display: true, position: 'bottom', labels: { usePointStyle: true, boxWidth: 7, padding: 10, color: '#555', font: { size: 9 } } },
       tooltip: {
-        filter: (context) => context.dataIndex > 0,
         callbacks: {
           title: (items) => `${monthName} · Day ${items[0]?.label}`,
           label: (context) => {
-            const dayIndex = context.dataIndex - 1;
             const predictedValue = Math.round(Number(context.raw) || 0).toLocaleString();
-            if (context.datasetIndex === 0) {
-              return [
-                `Daily consumption: ${values[dayIndex].toLocaleString()} tokens`,
-                `Actual cumulative: ${cumulativeValues[dayIndex].toLocaleString()} tokens`
-              ];
-            }
-            return `Predicted cumulative: ${predictedValue} tokens`;
+            return `${context.dataset.label}: ${predictedValue} tokens`;
           }
         }
       }
     },
     scales: {
-      x: { title: { display: true, text: `Day of month · ${monthName}`, color: '#666', font: { size: compact ? 8 : 10 } }, grid: { display: false }, ticks: { color: '#777', maxTicksLimit: compact ? 7 : 16 } },
-      y: { beginAtZero: true, min: 0, max: chartLimit, title: { display: true, text: 'Cumulative token count', color: '#666', font: { size: compact ? 8 : 10 } }, ticks: { color: '#777', callback: (value) => Number(value).toLocaleString() }, grid: { color: '#ededed' } }
+      x: { min: 1, title: { display: true, text: `Day of month · ${monthName}`, color: '#666', font: { size: compact ? 8 : 10 } }, grid: { display: false }, ticks: { color: '#777', maxTicksLimit: compact ? 7 : 16 } },
+      y: { beginAtZero: true, min: 0, max: chartLimit, title: { display: true, text: 'Tokens consumed', color: '#666', font: { size: compact ? 8 : 10 } }, ticks: { color: '#777', callback: (value) => Number(value).toLocaleString() }, grid: { color: '#ededed' } }
     }
   };
 
   return (
     <section className={`daily-chart-panel${compact ? ' daily-chart-panel-compact' : ''}`}>
-      <div className="daily-chart-header"><div><span className="eyebrow">{monthName.toUpperCase()} · CUMULATIVE CONSUMPTION</span>{!compact && <><h2>{showForecast ? 'Cumulative usage forecast' : 'Cumulative usage'}</h2>
-      {/* <p>{showForecast ? 'Red line: actual cumulative usage · blue dotted line: average-pace projection to month-end.' : 'Red line: actual cumulative usage; projections are hidden for completed months.'} Hover a daily point for totals.</p> */}
+      <div className="daily-chart-header"><div><span className="eyebrow">{monthName.toUpperCase()} · TOKEN USAGE</span>{!compact && <><h2>{showForecast ? 'Usage forecast' : 'Usage'}</h2>
       </>}
       </div></div>
       <div className="daily-chart-canvas"><Line data={chartData} options={chartOptions} /></div>
       <div className="daily-extremes forecast-summary">
-        <div><span>{showForecast ? 'MONTH-END ESTIMATE' : 'MONTH TOTAL'}</span><strong>{Math.round(monthEndEstimate).toLocaleString()}</strong></div>
+        <div><span>{showForecast ? 'PREDICTED MONTH USAGE' : 'MONTH TOTAL'}</span><strong>{Math.round(predictedMonthUsage).toLocaleString()}</strong></div>
         <div><span>AVERAGE PER DAY</span><strong>{Math.round(dailyAverage).toLocaleString()}</strong></div>
       </div>
+      {willExceedLimit && <div className="usage-limit-warning" role="status">
+        <span className="usage-warning-icon" aria-hidden="true">⚠</span>
+        <div><strong>{total >= tokenLimit ? 'Monthly token allocation exceeded' : `Token allocation projected to run out${exhaustionDate ? ` by ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(exhaustionDate)}` : ' this month'}`}</strong>
+          <span>Estimated month-end overage: {Math.round(projectedOverage).toLocaleString()} tokens</span>
+        </div>
+        {costPerToken !== null && <div className="usage-overage-cost"><span aria-hidden="true">$</span><div><strong>{formatCurrency(projectedOverage * costPerToken)}</strong><small>EST. ADDITIONAL COST</small></div></div>}
+      </div>}
     </section>
   );
 }
@@ -365,23 +377,19 @@ function LoginPage() {
   return (
     <main className="auth-shell">
       <section className="auth-aside" aria-label="Product information">
-        <Link className="brand-lockup" to="/" aria-label="Copilot Adoption home">
-          <span className="brand-mark">C</span>
-          <span>FIELDNOTES <i>/</i> COPILOT</span>
-        </Link>
         <div className="aside-copy">
           <div className="eyebrow"><span className="status-dot" /> ADOPTION INTELLIGENCE</div>
           <h1>Make usage<br />visible.</h1>
           <p>A clear view of how your organization is putting Copilot to work.</p>
         </div>
-        <div className="aside-index"><span>01</span><span>ACCESS PORTAL</span><span>2026</span></div>
       </section>
 
       <section className="auth-main">
-        <div className="auth-topline"><span>WORKSPACE ACCESS</span><span>SECURE SIGN IN <b>↗</b></span></div>
+        <div className="auth-topline">
+          <img className="brand-logo" src={societeGeneraleLogo} alt="Société Générale" />
+        </div>
         <div className="auth-form-wrap">
           <div className="auth-heading">
-            <div className="eyebrow text-muted">YOUR WORKSPACE</div>
             <h2>{mode === 'signin' ? 'Welcome back.' : 'Get access.'}</h2>
             <p>{mode === 'signin'
               ? 'Sign in with your employee email to continue.'
@@ -402,7 +410,7 @@ function LoginPage() {
             <form onSubmit={handleSubmit} noValidate>
               <label className="form-label" htmlFor="email">Work email</label>
               <div className="input-wrap">
-                <span className="input-icon" aria-hidden="true">@</span>
+                {!email && <span className="input-icon" aria-hidden="true">@</span>}
                 <input
                   id="email"
                   className={`form-control ${error ? 'is-invalid' : ''}`}
@@ -462,7 +470,13 @@ function UsageDetailPage() {
               ? tokenAnalytics?.departments?.find((department) => String(department.id) === targetId)
               : null;
         if (!target) throw new Error('Usage details are not available for this account.');
-        setAnalytics({ ...target, period_start: target.period_start || tokenAnalytics.period_start, period_end: target.period_end || tokenAnalytics.period_end, scope });
+        setAnalytics({
+          ...target,
+          period_start: target.period_start || tokenAnalytics.period_start,
+          period_end: target.period_end || tokenAnalytics.period_end,
+          model_usage: scope === 'employee' && user.role === 'employee' ? tokenAnalytics.model_usage : [],
+          scope
+        });
       })
       .catch((requestError) => {
         if (requestError.name !== 'AbortError') setError(requestError.message);
@@ -496,7 +510,7 @@ function UsageDetailPage() {
           <div className="data-heading detail-heading"><div><div className="eyebrow text-muted">{formatMonth(analytics.period_start)} · DAILY DETAIL</div><h1>{analytics.scope === 'employee' && String(user.id) === targetId ? 'Your usage.' : analytics.name}</h1><p>{analytics.scope === 'employee' ? 'Daily tokens consumed against this employee allocation.' : analytics.scope === 'department' ? 'Daily tokens consumed across this department.' : 'Combined daily tokens consumed by project employees.'}</p></div></div>
           <div className="usage-detail-grid">
             <TokenPieCard title={analytics.scope === 'employee' ? 'Employee allocation' : analytics.name} subtitle={`${analytics.period_start} to ${analytics.period_end}`} consumed={analytics.consumed_tokens} limit={analytics.token_limit} />
-            <DailyUsageChart series={analytics.daily_usage} limit={analytics.token_limit} />
+            <DailyUsageChart series={analytics.daily_usage} limit={analytics.token_limit} modelUsage={analytics.model_usage} />
           </div>
         </>}
       </section>
@@ -591,18 +605,16 @@ function DataPage() {
           </section>}
 
           {response.token_analytics?.employee && <section className="token-analytics-section">
-            <div className="section-title"><div><span className="eyebrow">{formatMonth(response.token_analytics.period_start)}</span><h2>Your token consumption</h2></div><span>LAST MONTH</span></div>
-            <AnalyticsCarousel items={[response.token_analytics.employee]} selectedIndex={0} onSelect={() => {}} itemLabel="usage period">
-              {(employee) => <>
+            <div className="section-title"><div><span className="eyebrow">{formatMonth(response.token_analytics.period_start)}</span><h2>Your token consumption</h2></div></div>
+            <div className="department-token-summary department-token-layout">
               <TokenPieCard
                 title="Employee allocation"
                 subtitle={`${response.token_analytics.period_start} to ${response.token_analytics.period_end}`}
-                consumed={employee.consumed_tokens}
-                limit={employee.token_limit}
+                consumed={response.token_analytics.employee.consumed_tokens}
+                limit={response.token_analytics.employee.token_limit}
               />
-              <DailyUsageChart series={employee.daily_usage} limit={employee.token_limit} compact />
-              </>}
-            </AnalyticsCarousel>
+              <DailyUsageChart series={response.token_analytics.employee.daily_usage} limit={response.token_analytics.employee.token_limit} modelUsage={response.token_analytics.model_usage} />
+            </div>
           </section>}
 
           {response.role === 'project_manager' && <section className="token-analytics-section">

@@ -203,7 +203,7 @@ function DailyUsageChart({ series = [], limit, modelUsage = [], compact = false 
   );
 }
 
-function AnalyticsCarousel({ items, selectedIndex, onSelect, itemLabel, children }) {
+function AnalyticsCarousel({ items, selectedIndex, onSelect, itemLabel, children, includeAllSlides = false }) {
   const currentIndex = Math.min(selectedIndex, items.length - 1);
   return (
     <div className="analytics-carousel">
@@ -212,8 +212,149 @@ function AnalyticsCarousel({ items, selectedIndex, onSelect, itemLabel, children
         <span>{String(currentIndex + 1).padStart(2, '0')} <i>/</i> {String(items.length).padStart(2, '0')}</span>
         <button className="project-nav-button" type="button" aria-label={`Next ${itemLabel}`} disabled={currentIndex >= items.length - 1} onClick={() => onSelect(currentIndex + 1)}>→</button>
       </div>
-      {children(items[currentIndex], currentIndex)}
+      {(includeAllSlides ? items : [items[currentIndex]]).map((item, slideIndex) => {
+        const index = includeAllSlides ? slideIndex : currentIndex;
+        return <div className="analytics-carousel-slide" key={item.id} data-slide-index={index}>{children(item, index)}</div>;
+      })}
     </div>
+  );
+}
+
+function useReportPrint() {
+  const [includeAllSlides, setIncludeAllSlides] = useState(false);
+  const [reportSummary, setReportSummary] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!includeAllSlides) return undefined;
+    const printTimer = window.setTimeout(() => window.print(), 300);
+    const handleAfterPrint = () => {
+      setIncludeAllSlides(false);
+      setReportSummary('');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.clearTimeout(printTimer);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [includeAllSlides]);
+
+  async function generateReport({ userId, role, analytics, month }) {
+    if (generating) return;
+    setGenerating(true);
+    setError('');
+    try {
+      const compactAnalytics = {
+        period_start: analytics.period_start,
+        period_end: analytics.period_end,
+        employee: analytics.employee && reportEntity(analytics.employee),
+        department: analytics.department && reportEntity(analytics.department),
+        projects: (analytics.projects || []).map(reportEntity),
+        employees: (analytics.employees || []).map(reportEntity),
+        departments: (analytics.departments || []).map(reportEntity),
+        model_usage: (analytics.model_usage || []).map(({ model, tokens, per_token_cost }) => ({ model, tokens, per_token_cost }))
+      };
+      const result = await request('/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          question: 'Create a concise but useful report summary of all supplied usage, allocation, department/project/employee and model cost insights. Then recommend specific token reallocation from underused entities to over-allocated entities where the supplied numbers support it, preserving overall allocation when possible. Suggest practical cost reductions based on the model usage/cost data. Quantify proposed transfers and possible savings only when they can be calculated from the supplied data. Do not invent savings, usage, provider prices, causes, or recommendations unsupported by the data. Explicitly state that model costs are estimates from blended rates.',
+          analytics: compactAnalytics,
+          month,
+          history: []
+        })
+      });
+      setReportSummary(result.answer);
+      setIncludeAllSlides(true);
+    } catch (requestError) {
+      setError(requestError.message === 'Failed to fetch'
+        ? 'Could not reach the AI service. Check that the backend is running.'
+        : requestError.message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return { includeAllSlides, reportSummary, generating, error, generateReport };
+}
+
+function reportEntity(entity) {
+  return {
+    id: entity.id,
+    name: entity.name,
+    token_limit: entity.token_limit,
+    consumed_tokens: entity.consumed_tokens
+  };
+}
+
+function GenerateReportButton({ onClick, disabled, generating }) {
+  return <button className="btn btn-report" type="button" onClick={onClick} disabled={disabled || generating}>
+    {generating ? 'Generating report…' : 'Generate report PDF'} {!generating && <span aria-hidden="true">↓</span>}
+  </button>;
+}
+
+function ReportGenerationStatus({ error, generating }) {
+  if (error) return <div className="alert alert-danger report-generation-status" role="alert">{error}</div>;
+  if (generating) return <div className="report-generation-status" role="status">Generating AI summary and allocation recommendations…</div>;
+  return null;
+}
+
+function ReportSummary({ analytics, role, title, aiSummary }) {
+  const entityRows = analytics.scope === 'department'
+    ? analytics.projects || []
+    : analytics.scope === 'project'
+      ? analytics.employees || []
+      : role === 'exec'
+        ? analytics.departments || []
+        : role === 'dept_head'
+          ? analytics.projects || []
+          : role === 'project_manager'
+            ? analytics.employees || []
+            : [];
+  const primary = analytics.employee || analytics.department || (analytics.consumed_tokens != null ? analytics : null);
+  const total = primary
+    ? Number(primary.consumed_tokens) || 0
+    : (analytics.projects || analytics.departments || []).reduce((sum, item) => sum + (Number(item.consumed_tokens) || 0), 0);
+  const limit = primary
+    ? Number(primary.token_limit) || 0
+    : (analytics.projects || analytics.departments || []).reduce((sum, item) => sum + (Number(item.token_limit) || 0), 0);
+  const balance = limit - total;
+  const overAllocated = entityRows.filter((item) => Number(item.consumed_tokens) > Number(item.token_limit)).length;
+  const modelCosts = (analytics.model_usage || []).map((model) => ({
+    model: model.model,
+    tokens: Number(model.tokens) || 0,
+    cost: (Number(model.tokens) || 0) * (Number(model.per_token_cost) || 0)
+  }));
+  const estimatedCost = modelCosts.reduce((sum, model) => sum + model.cost, 0);
+  const topModel = modelCosts.reduce((top, model) => model.cost > (top?.cost || 0) ? model : top, null);
+  const formatNumber = (value) => Math.round(value).toLocaleString();
+  const formatCurrency = (value) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+
+  return (
+    <section className="report-summary" aria-label="Report summary">
+      <span className="eyebrow">EXECUTIVE SUMMARY · {formatMonth(analytics.period_start)}</span>
+      <h2>{title}</h2>
+      <p>
+        {title} recorded <strong>{formatNumber(total)} tokens</strong> against an allocation of <strong>{formatNumber(limit)} tokens</strong>.
+        {' '}{limit > 0
+          ? balance >= 0
+            ? <><strong>{formatNumber(balance)} tokens</strong> are projected to remain.</>
+            : <><strong>{formatNumber(-balance)} additional tokens</strong> are needed.</>
+          : 'No allocation is available for comparison.'}
+        {entityRows.length > 0 && <> {overAllocated} of {entityRows.length} listed {analytics.scope === 'department' || role === 'dept_head' ? 'projects' : analytics.scope === 'project' || role === 'project_manager' ? 'employees' : 'departments'} are over allocation.</>}
+      </p>
+      <p>
+        Estimated model API cost for the selected period is <strong>{formatCurrency(estimatedCost)}</strong>
+        {topModel && <>; <strong>{topModel.model}</strong> is the largest cost contributor at {formatCurrency(topModel.cost)} across {formatNumber(topModel.tokens)} tokens.</>}
+        {' '}Cost is estimated from blended per-model rates.
+      </p>
+      {aiSummary && <div className="report-ai-summary">
+        <h3>AI insights and reallocation recommendations</h3>
+        <FormattedAIAnswer answer={aiSummary} />
+      </div>}
+    </section>
   );
 }
 
@@ -551,12 +692,12 @@ function MonthSelector({ months, value, onChange }) {
   );
 }
 
-function ExecutiveDepartmentCarousel({ analytics, onOpen }) {
+function ExecutiveDepartmentCarousel({ analytics, onOpen, includeAllSlides }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const departments = analytics.departments || [];
 
   return (
-    <AnalyticsCarousel items={departments} selectedIndex={selectedIndex} onSelect={setSelectedIndex} itemLabel="department">
+    <AnalyticsCarousel items={departments} selectedIndex={selectedIndex} onSelect={setSelectedIndex} itemLabel="department" includeAllSlides={includeAllSlides}>
       {(department) => <>
         <TokenPieCard
           title={department.name}
@@ -676,6 +817,7 @@ function UsageDetailPage() {
   const [availableMonths, setAvailableMonths] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const { includeAllSlides, generateReport, reportSummary, generating, error: reportError } = useReportPrint();
 
   useEffect(() => {
     if (!user) return;
@@ -743,7 +885,7 @@ function UsageDetailPage() {
     : user;
 
   return (
-    <main className="data-shell">
+    <main className={`data-shell${includeAllSlides ? ' report-generating' : ''}`}>
       <header className="data-header">
         <Link className="brand-lockup data-brand" to="/data" aria-label="Copilot Usage Analytics Dashboard">
           <img className="brand-logo" src={societeGeneraleLogo} alt="Société Générale" />
@@ -757,8 +899,26 @@ function UsageDetailPage() {
         {analytics && <>
           <div className="data-heading detail-heading">
             <div><div className="eyebrow text-muted">{formatMonth(analytics.period_start)} · DAILY DETAIL</div><h1>{analytics.scope === 'employee' && String(user.id) === targetId ? 'Your usage.' : analytics.name}</h1><p>{analytics.scope === 'employee' ? 'Daily tokens consumed against this employee allocation.' : analytics.scope === 'department' ? 'Daily tokens consumed across this department.' : analytics.scope === 'project' ? 'Combined daily tokens consumed by project employees.' : 'Daily token consumption by employee.'}</p></div>
-            <div className="data-controls"><MonthSelector months={monthOptions} value={monthValue} onChange={(month) => setSearchParams({ month })} /></div>
+            <div className="data-controls">
+              <MonthSelector months={monthOptions} value={monthValue} onChange={(month) => setSearchParams({ month })} />
+              <GenerateReportButton
+                onClick={() => generateReport({
+                  userId: user.id,
+                  role: analytics.scope === 'department' ? 'dept_head' : analytics.scope === 'project' ? 'project_manager' : 'employee',
+                  analytics,
+                  month: monthValue
+                })}
+                generating={generating}
+              />
+            </div>
           </div>
+          <ReportGenerationStatus error={reportError} generating={generating} />
+          <ReportSummary
+            analytics={analytics}
+            role={analytics.scope === 'department' ? 'dept_head' : analytics.scope === 'project' ? 'project_manager' : 'employee'}
+            title={analytics.name || 'Usage summary'}
+            aiSummary={reportSummary}
+          />
           <div className="usage-detail-grid">
             <TokenPieCard title={analytics.scope === 'employee' ? 'Employee allocation' : analytics.name} subtitle={`${analytics.period_start} to ${analytics.period_end}`} consumed={analytics.consumed_tokens} limit={analytics.token_limit} />
             <DailyUsageChart series={analytics.daily_usage} limit={analytics.token_limit} modelUsage={analytics.model_usage} />
@@ -793,6 +953,7 @@ function DataPage() {
   const [projectIndex, setProjectIndex] = useState(0);
   const [departmentProjectIndex, setDepartmentProjectIndex] = useState(0);
   const selectedMonth = searchParams.get('month') || '';
+  const { includeAllSlides, generateReport, reportSummary, generating, error: reportError } = useReportPrint();
 
   useEffect(() => {
     if (!user) return;
@@ -830,7 +991,7 @@ function DataPage() {
   const monthOptions = monthOptionsFor(response?.available_months, monthValue, response?.token_analytics?.period_start);
 
   return (
-    <main className="data-shell">
+    <main className={`data-shell${includeAllSlides ? ' report-generating' : ''}`}>
       <header className="data-header">
         <Link className="brand-lockup data-brand" to="/">
           <img className="brand-logo" src={societeGeneraleLogo} alt="Société Générale" />
@@ -849,17 +1010,34 @@ function DataPage() {
           </div>
           <div className="data-controls">
             {response && <MonthSelector months={monthOptions} value={monthValue} onChange={(month) => setSearchParams({ month })} />}
+            {response && <GenerateReportButton
+              onClick={() => generateReport({
+                userId: user.id,
+                role: response.role,
+                analytics: response.token_analytics || {},
+                month: monthValue
+              })}
+              generating={generating}
+            />}
           </div>
         </div>
 
+        <ReportGenerationStatus error={reportError} generating={generating} />
         {loading && <div className="loading-state"><span className="spinner-border" aria-hidden="true" /><span>Loading your workspace data</span></div>}
         {error && <div className="alert alert-danger" role="alert"><strong>Couldn’t load workspace data.</strong><div>{error}</div><button className="btn btn-sm btn-outline-danger mt-3" onClick={() => window.location.reload()}>Try again</button></div>}
 
         {response && <>
+          <ReportSummary
+            analytics={response.token_analytics || {}}
+            role={response.role}
+            title="Copilot usage overview"
+            aiSummary={reportSummary}
+          />
           {response.role === 'exec' && response.token_analytics?.departments?.length > 0 && <section className="token-analytics-section executive-analytics-section">
             <div className="section-title"><div><span className="eyebrow">{formatMonth(response.token_analytics.period_start)}</span><h2>Department consumption</h2></div><span>{response.token_analytics.departments.length} DEPARTMENTS</span></div>
             <ExecutiveDepartmentCarousel
               analytics={response.token_analytics}
+              includeAllSlides={includeAllSlides}
               onOpen={(department) => navigate(`/usage/department/${department.id}?month=${encodeURIComponent(monthValue)}`)}
             />
           </section>}
@@ -883,7 +1061,7 @@ function DataPage() {
               const projects = response.token_analytics.projects;
               const selectedIndex = Math.min(projectIndex, projects.length - 1);
               const project = projects[selectedIndex];
-              return <AnalyticsCarousel items={projects} selectedIndex={selectedIndex} onSelect={setProjectIndex} itemLabel="project">
+              return <AnalyticsCarousel items={projects} selectedIndex={selectedIndex} onSelect={setProjectIndex} itemLabel="project" includeAllSlides={includeAllSlides}>
                 {(project) => <>
                 <TokenPieCard title={project.name} subtitle="Combined usage for all project employees" consumed={project.consumed_tokens} limit={project.token_limit} onClick={() => navigate(`/usage/project/${project.id}?month=${encodeURIComponent(selectedMonth || response.token_analytics.period_start.slice(0, 7))}`)} />
                 <DailyUsageChart series={project.daily_usage} limit={project.token_limit} modelUsage={response.token_analytics.model_usage} />
@@ -908,7 +1086,7 @@ function DataPage() {
               const projects = response.token_analytics.projects;
               const selectedIndex = Math.min(departmentProjectIndex, projects.length - 1);
               const project = projects[selectedIndex];
-              return <AnalyticsCarousel items={projects} selectedIndex={selectedIndex} onSelect={setDepartmentProjectIndex} itemLabel="department project">
+              return <AnalyticsCarousel items={projects} selectedIndex={selectedIndex} onSelect={setDepartmentProjectIndex} itemLabel="department project" includeAllSlides={includeAllSlides}>
                 {(project) => <>
                 <TokenPieCard title={project.name} subtitle="Project team usage" consumed={project.consumed_tokens} limit={project.token_limit} />
                 <DailyUsageChart series={project.daily_usage} limit={project.token_limit} modelUsage={response.token_analytics.model_usage} compact />

@@ -69,6 +69,10 @@ When connected to validated organizational data and identity controls, the solut
 
 Model-cost values are estimates based on blended per-model rates. The mock usage records store total tokens, not the separate input, output, or cached-token quantities required to calculate an exact invoice. Estimates therefore do not include plan-specific discounts, cached-token discounts, or long-context pricing.
 
+## Solution Architecture
+
+The browser-based React dashboard calls the Node.js/Express API for role-scoped analytics and AI analysis. The API reads application data from PostgreSQL and sends only sanitized, aggregated analytics context to Google Gemini when AI assistance is requested. PDF creation uses the browser’s print-to-PDF flow. See the [solution architecture diagram](docs/architecture/solution-architecture.md) for the components, data flows, and prototype boundaries.
+
 ## Setup and Execution
 
 The submission layout has `README.md` and `docker-compose.yaml` at the Git repository root, with the application folders at `src/backend` and `src/frontend`. Run repository-level Docker commands from the Git root.

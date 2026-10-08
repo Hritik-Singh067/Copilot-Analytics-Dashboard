@@ -64,6 +64,11 @@ No password or token for now.
 The response also carries `role`, `user`, `filters` and `counts`. `from`/`to` only narrow `copilot_usage`.
 `400` for a bad `user_id` or dates, `404` for an unknown user.
 
+Executive users can drill into a department and then its projects; executive, department-head, and project-manager
+users can open their authorized project and see its employee allocations. The dashboard month selector applies
+through each level of the hierarchy. These detail views use **`GET /api/data/departments/:departmentId`** and
+**`GET /api/data/projects/:projectId`**, with `user_id` and optional `month=YYYY-MM` query parameters.
+
 Notes: the full dept_head/exec response is ~30 MB (251k usage rows), so use `from`/`to` or add pagination
 before putting it behind a UI. There is no token, so `user_id` is trusted as sent; add a session or SSO
 before this is used beyond a local prototype.

@@ -38,7 +38,8 @@ function TokenPieCard({ title, subtitle, consumed, limit, onClick }) {
       data: allocation > 0 ? [used, remaining] : [1],
       backgroundColor: allocation > 0 ? ['#c8102e', '#e7e7e7'] : ['#c8102e'],
       borderWidth: 0,
-      hoverOffset: 4
+      hoverBorderWidth: 0,
+      hoverOffset: 0
     }]
   };
   const options = {
@@ -120,7 +121,7 @@ function DailyUsageChart({ series = [], limit, modelUsage = [], compact = false 
         label: 'Actual usage',
         data: actualUsageByDay,
         borderColor: '#c8102e',
-        backgroundColor: '#c8102e',
+        backgroundColor: '#8f1022',
         pointBackgroundColor: '#c8102e',
         pointBorderColor: '#fff',
         pointBorderWidth: 1,
@@ -279,16 +280,46 @@ function TokenUsageTable({ title, category, period, rows, onOpen }) {
 function ModelUsageChart({ rows = [] }) {
   if (!rows.length) return null;
   const period = formatMonth(rows[0].period_start);
+  const modelCredits = rows.map((row) => ({
+    ...row,
+    credits: (Number(row.tokens) || 0) * (Number(row.per_token_cost) || 0)
+  }));
+  const formatCredits = (amount) => new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
   const chartData = {
     labels: rows.map((row) => row.model),
     datasets: [{
       label: 'Tokens consumed',
       data: rows.map((row) => Number(row.tokens) || 0),
-      backgroundColor: ['#c8102e', '#176b5b', '#d68b00', '#2864b4', '#784e9b', '#487c32', '#c45b24', '#167c91'],
+      backgroundColor: '#c8102e',
       borderWidth: 0,
       borderRadius: 2,
       maxBarThickness: 24
     }]
+  };
+  const creditLabelsPlugin = {
+    id: 'model-credit-labels',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      const bars = chart.getDatasetMeta(0).data;
+      ctx.save();
+      ctx.font = '10px "DM Mono", monospace';
+      ctx.textBaseline = 'middle';
+      bars.forEach((bar, index) => {
+        const label = formatCredits(modelCredits[index].credits);
+        const textWidth = ctx.measureText(label).width;
+        const barWidth = bar.x - bar.base;
+        const fitsInside = barWidth >= textWidth + 12;
+        ctx.textAlign = fitsInside ? 'right' : 'left';
+        ctx.fillStyle = fitsInside ? '#fff' : '#8f1022';
+        ctx.fillText(label, fitsInside ? bar.x - 6 : bar.x + 6, bar.y);
+      });
+      ctx.restore();
+    }
   };
   const options = {
     indexAxis: 'y',
@@ -296,10 +327,17 @@ function ModelUsageChart({ rows = [] }) {
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
-      tooltip: { callbacks: { label: (context) => `${Number(context.raw).toLocaleString()} tokens consumed` } }
+      tooltip: {
+        callbacks: {
+          label: (context) => [
+            `${Number(context.raw).toLocaleString()} tokens`,
+            `${formatCredits(modelCredits[context.dataIndex].credits)} estimated AI credits`
+          ]
+        }
+      }
     },
     scales: {
-      x: { beginAtZero: true, title: { display: true, text: 'Tokens consumed' }, ticks: { callback: (value) => Number(value).toLocaleString() }, grid: { color: '#ededed' } },
+      x: { beginAtZero: true, position: 'bottom', title: { display: true, text: 'Tokens consumed' }, ticks: { callback: (value) => Number(value).toLocaleString() }, grid: { color: '#ededed' } },
       y: { grid: { display: false }, ticks: { color: '#444' } }
     }
   };
@@ -307,7 +345,7 @@ function ModelUsageChart({ rows = [] }) {
   return (
     <section className="model-usage-section">
       <div className="section-title"><div><span className="eyebrow">{period.toUpperCase()} · ALL SCOPED REQUESTS</span><h2>Token usage by model</h2></div><span>{rows.length} MODELS</span></div>
-      <div className="model-usage-chart-wrap"><Bar data={chartData} options={options} /></div>
+      <div className="model-usage-chart-wrap"><Bar data={chartData} options={options} plugins={[creditLabelsPlugin]} /></div>
     </section>
   );
 }
@@ -318,7 +356,26 @@ function formatMonth(dateString) {
     .format(new Date(`${dateString}T00:00:00Z`));
 }
 
-function ExecutiveDepartmentCarousel({ analytics }) {
+function monthOptionsFor(availableMonths, selectedMonth, periodStart) {
+  return [...new Set([
+    ...(availableMonths || []),
+    periodStart?.slice(0, 7),
+    new Date().toISOString().slice(0, 7),
+    selectedMonth
+  ].filter(Boolean))].sort().reverse();
+}
+
+function MonthSelector({ months, value, onChange }) {
+  return (
+    <label className="month-filter">Usage month
+      <select className="form-select form-select-sm" value={value || ''} onChange={(event) => onChange(event.target.value)}>
+        {months.map((month) => <option key={month} value={month}>{formatMonth(`${month}-01`)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function ExecutiveDepartmentCarousel({ analytics, onOpen }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const departments = analytics.departments || [];
 
@@ -330,6 +387,7 @@ function ExecutiveDepartmentCarousel({ analytics }) {
           subtitle={`${analytics.period_start} to ${analytics.period_end}`}
           consumed={department.consumed_tokens}
           limit={department.token_limit}
+          onClick={() => onOpen(department)}
         />
         <DailyUsageChart series={department.daily_usage} limit={department.token_limit} compact />
       </>}
@@ -441,11 +499,13 @@ function LoginPage() {
 }
 
 function UsageDetailPage() {
+  const navigate = useNavigate();
   const { scope, targetId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = savedUser();
   const selectedMonth = searchParams.get('month') || '';
   const [analytics, setAnalytics] = useState(null);
+  const [availableMonths, setAvailableMonths] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -455,8 +515,26 @@ function UsageDetailPage() {
     setLoading(true);
     setError('');
     const monthQuery = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
-    request(`/data?user_id=${encodeURIComponent(user.id)}${monthQuery}`, { signal: controller.signal })
+    const nestedScope = (scope === 'department' && user.role === 'exec')
+      || (scope === 'project' && ['exec', 'dept_head', 'project_manager'].includes(user.role));
+    const requestPath = nestedScope
+      ? `/data/${scope === 'department' ? 'departments' : 'projects'}/${encodeURIComponent(targetId)}?user_id=${encodeURIComponent(user.id)}${monthQuery}`
+      : `/data?user_id=${encodeURIComponent(user.id)}${monthQuery}`;
+    request(requestPath, { signal: controller.signal })
       .then((result) => {
+        setAvailableMonths(result.available_months || []);
+        if (nestedScope) {
+          setAnalytics({
+            ...(scope === 'department' ? result.department : result.project),
+            period_start: result.period_start,
+            period_end: result.period_end,
+            model_usage: result.model_usage || [],
+            projects: result.projects,
+            employees: result.employees,
+            scope
+          });
+          return;
+        }
         const tokenAnalytics = result.token_analytics;
         const target = scope === 'employee'
           ? user.role === 'employee' && String(user.id) === targetId
@@ -487,9 +565,11 @@ function UsageDetailPage() {
 
   if (!user) return <Navigate to="/" replace />;
   const allowedDetail = (scope === 'employee' && ['employee', 'project_manager'].includes(user.role))
-    || (scope === 'project' && ['project_manager', 'dept_head'].includes(user.role))
+    || (scope === 'project' && ['project_manager', 'dept_head', 'exec'].includes(user.role))
     || (scope === 'department' && user.role === 'exec');
   if (!allowedDetail) return <Navigate to="/data" replace />;
+  const monthValue = selectedMonth || analytics?.period_start?.slice(0, 7) || '';
+  const monthOptions = monthOptionsFor(availableMonths, monthValue, analytics?.period_start);
   const displayUser = analytics?.scope === 'employee' && analytics.email
     ? { ...user, name: analytics.name, email: analytics.email, role: 'employee' }
     : user;
@@ -503,15 +583,31 @@ function UsageDetailPage() {
         <div className="header-user"><div><strong>{displayUser.name}</strong></div><span className="role-tag">{displayUser.role.replaceAll('_', ' ')}</span></div>
       </header>
       <section className="data-content usage-detail-content">
-        <Link className="back-link" to="/data"><span aria-hidden="true">←</span> Back to overview</Link>
+        <Link className="back-link" to={`/data?month=${encodeURIComponent(monthValue)}`}><span aria-hidden="true">←</span> Back to overview</Link>
         {loading && <div className="loading-state"><span className="spinner-border" aria-hidden="true" /><span>Loading daily usage</span></div>}
         {error && <div className="alert alert-danger" role="alert">{error}</div>}
         {analytics && <>
-          <div className="data-heading detail-heading"><div><div className="eyebrow text-muted">{formatMonth(analytics.period_start)} · DAILY DETAIL</div><h1>{analytics.scope === 'employee' && String(user.id) === targetId ? 'Your usage.' : analytics.name}</h1><p>{analytics.scope === 'employee' ? 'Daily tokens consumed against this employee allocation.' : analytics.scope === 'department' ? 'Daily tokens consumed across this department.' : 'Combined daily tokens consumed by project employees.'}</p></div></div>
+          <div className="data-heading detail-heading">
+            <div><div className="eyebrow text-muted">{formatMonth(analytics.period_start)} · DAILY DETAIL</div><h1>{analytics.scope === 'employee' && String(user.id) === targetId ? 'Your usage.' : analytics.name}</h1><p>{analytics.scope === 'employee' ? 'Daily tokens consumed against this employee allocation.' : analytics.scope === 'department' ? 'Daily tokens consumed across this department.' : analytics.scope === 'project' ? 'Combined daily tokens consumed by project employees.' : 'Daily token consumption by employee.'}</p></div>
+            <div className="data-controls"><MonthSelector months={monthOptions} value={monthValue} onChange={(month) => setSearchParams({ month })} /></div>
+          </div>
           <div className="usage-detail-grid">
             <TokenPieCard title={analytics.scope === 'employee' ? 'Employee allocation' : analytics.name} subtitle={`${analytics.period_start} to ${analytics.period_end}`} consumed={analytics.consumed_tokens} limit={analytics.token_limit} />
             <DailyUsageChart series={analytics.daily_usage} limit={analytics.token_limit} modelUsage={analytics.model_usage} />
           </div>
+          {analytics.projects?.length > 0 && <TokenUsageTable
+            title={`Projects in ${analytics.name}`}
+            category="projects"
+            period={formatMonth(analytics.period_start)}
+            rows={analytics.projects}
+            onOpen={(project) => navigate(`/usage/project/${project.id}?month=${encodeURIComponent(monthValue)}`)}
+          />}
+          {analytics.employees?.length > 0 && <TokenUsageTable
+            title={`Employees in ${analytics.name}`}
+            category="employees"
+            period={formatMonth(analytics.period_start)}
+            rows={analytics.employees}
+          />}
         </>}
       </section>
       <footer className="data-footer"><span>COPILOT ADOPTION ANALYTICS</span><span>DAILY USAGE · {analytics ? formatMonth(analytics.period_start).toUpperCase() : ''}</span></footer>
@@ -521,13 +617,14 @@ function UsageDetailPage() {
 
 function DataPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = savedUser();
   const [response, setResponse] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [projectIndex, setProjectIndex] = useState(0);
   const [departmentProjectIndex, setDepartmentProjectIndex] = useState(0);
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const selectedMonth = searchParams.get('month') || '';
 
   useEffect(() => {
     if (!user) return;
@@ -561,12 +658,8 @@ function DataPage() {
       : response?.role === 'project_manager'
         ? { title: 'Token usage by employee', category: 'employees', scope: 'employee', rows: response.token_analytics?.employees }
         : null;
-  const monthOptions = [...new Set([
-    ...(response?.available_months || []),
-    response?.token_analytics?.period_start?.slice(0, 7),
-    new Date().toISOString().slice(0, 7),
-    selectedMonth
-  ].filter(Boolean))].sort().reverse();
+  const monthValue = selectedMonth || response?.filters?.month || response?.token_analytics?.period_start?.slice(0, 7) || '';
+  const monthOptions = monthOptionsFor(response?.available_months, monthValue, response?.token_analytics?.period_start);
 
   return (
     <main className="data-shell">
@@ -587,11 +680,7 @@ function DataPage() {
             <h1>Copilot Usage Analytics Dashboard</h1>
           </div>
           <div className="data-controls">
-            {response && <label className="month-filter">Usage month
-              <select className="form-select form-select-sm" value={selectedMonth || response.filters?.month || response.token_analytics?.period_start?.slice(0, 7) || ''} onChange={(event) => setSelectedMonth(event.target.value)}>
-                {monthOptions.map((month) => <option key={month} value={month}>{formatMonth(`${month}-01`)}</option>)}
-              </select>
-            </label>}
+            {response && <MonthSelector months={monthOptions} value={monthValue} onChange={(month) => setSearchParams({ month })} />}
           </div>
         </div>
 
@@ -601,7 +690,10 @@ function DataPage() {
         {response && <>
           {response.role === 'exec' && response.token_analytics?.departments?.length > 0 && <section className="token-analytics-section executive-analytics-section">
             <div className="section-title"><div><span className="eyebrow">{formatMonth(response.token_analytics.period_start)}</span><h2>Department consumption</h2></div><span>{response.token_analytics.departments.length} DEPARTMENTS</span></div>
-            <ExecutiveDepartmentCarousel analytics={response.token_analytics} />
+            <ExecutiveDepartmentCarousel
+              analytics={response.token_analytics}
+              onOpen={(department) => navigate(`/usage/department/${department.id}?month=${encodeURIComponent(monthValue)}`)}
+            />
           </section>}
 
           {response.token_analytics?.employee && <section className="token-analytics-section">
@@ -662,7 +754,7 @@ function DataPage() {
             category={subordinateUsage.category}
             period={formatMonth(response.token_analytics?.period_start)}
             rows={subordinateUsage.rows}
-            onOpen={(row) => navigate(`/usage/${subordinateUsage.scope}/${row.id}?month=${encodeURIComponent(selectedMonth || response.token_analytics.period_start.slice(0, 7))}`)}
+            onOpen={(row) => navigate(`/usage/${subordinateUsage.scope}/${row.id}?month=${encodeURIComponent(monthValue)}`)}
           />}
 
           <ModelUsageChart rows={response.token_analytics?.model_usage} />

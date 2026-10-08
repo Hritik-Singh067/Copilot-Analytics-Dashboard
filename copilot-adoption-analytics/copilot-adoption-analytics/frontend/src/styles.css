@@ -81,12 +81,43 @@ button, input { font: inherit; }
 .data-heading h1 { margin: 0; color: var(--ink); font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 600; letter-spacing: -.055em; }
 .data-heading p { color: var(--muted); font-size: 14px; margin: 0; }
 .overview-top, .section-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.data-content > section,
+.usage-detail-grid {
+  position: relative;
+  isolation: isolate;
+}
+.data-content > section::before {
+  content: '';
+  position: absolute;
+  top: -18px;
+  left: -5%;
+  width: 110%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(17,17,17,.06) 8%, rgba(17,17,17,.24) 50%, rgba(17,17,17,.06) 92%, transparent 100%);
+  pointer-events: none;
+}
+.data-content > section::after,
+.usage-detail-grid::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -10px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 24px rgba(200,16,46,.10), 0 0 8px rgba(200,16,46,.045);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+.data-content > section:hover::after,
+.usage-detail-grid:hover::after {
+  opacity: 1;
+}
 .token-analytics-section { margin-top: 44px; }
 .token-analytics-section > .section-title { margin-bottom: 18px; }
 .token-analytics-section > .section-title > span { color: var(--red); font: 10px var(--mono); }
 .token-chart-card { width: min(100%, 340px); padding: 21px; border: 1px solid #dedede; background: #fff; }
-.token-chart-card-clickable { cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
-.token-chart-card-clickable:hover, .token-chart-card-clickable:focus-visible { border-color: var(--red); box-shadow: 0 8px 24px rgba(0,0,0,.08); outline: none; transform: translateY(-2px); }
+.token-chart-card-clickable { cursor: pointer; }
 .chart-detail-link { display: flex; justify-content: space-between; margin-top: 15px; padding-top: 12px; border-top: 1px solid #e4e4e4; color: var(--red); font: 9px var(--mono); letter-spacing: .06em; }
 .token-chart-heading .eyebrow { color: var(--red); }
 .token-chart-heading h3 { margin: 8px 0 3px; color: var(--ink); font-size: 16px; font-weight: 700; }
@@ -164,7 +195,7 @@ button, input { font: inherit; }
 .token-usage-table tbody td { padding: 13px 10px; }
 .usage-progress-cell { display: flex; align-items: center; gap: 10px; min-width: 170px; }
 .usage-progress { height: 8px; flex: 1; min-width: 80px; overflow: hidden; border-radius: 0; background: #e8ebe7; }
-.usage-progress-fill { background: #66834a; }
+.usage-progress-fill { background: var(--red); }
 .usage-progress-over { background: var(--red); }
 .usage-percent { min-width: 40px; color: #58635a; font: 10px var(--mono); text-align: right; }
 .usage-percent-over { color: var(--red); }

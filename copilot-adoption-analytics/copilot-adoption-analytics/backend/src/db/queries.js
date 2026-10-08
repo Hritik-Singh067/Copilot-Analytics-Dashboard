@@ -294,6 +294,50 @@ async function monthlyEmployeesForManager(db, managerId, monthStart) {
   return rows;
 }
 
+async function monthlyEmployeesForProject(db, projectId, monthStart) {
+  const { rows } = await db.query(
+    `WITH period AS (
+       SELECT COALESCE($2::date, (date_trunc('month', CURRENT_DATE) - interval '1 month')::date) AS period_start,
+         LEAST((COALESCE($2::date, (date_trunc('month', CURRENT_DATE) - interval '1 month')::date) + interval '1 month' - interval '1 day')::date, CURRENT_DATE) AS period_end
+     ), daily_usage AS (
+       SELECT e.github_username, u.usage_date, SUM(u.tokens_consumed)::BIGINT AS tokens
+       FROM employees e
+       JOIN copilot_usage u ON u.github_username = e.github_username
+       CROSS JOIN period
+       WHERE e.project_id = $1
+         AND e.role = 'employee'
+         AND u.usage_date BETWEEN period.period_start AND period.period_end
+       GROUP BY e.github_username, u.usage_date
+     ), monthly_usage AS (
+       SELECT github_username, SUM(tokens)::BIGINT AS consumed_tokens
+       FROM daily_usage
+       GROUP BY github_username
+     )
+     SELECT e.id, e.name, e.email, e.max_limit AS token_limit,
+            COALESCE(monthly_usage.consumed_tokens, 0)::BIGINT AS consumed_tokens,
+            to_char(period.period_start, 'YYYY-MM-DD') AS period_start,
+            to_char(period.period_end, 'YYYY-MM-DD') AS period_end,
+            COALESCE((
+              SELECT json_agg(json_build_object(
+                'date', to_char(days.day, 'YYYY-MM-DD'),
+                'tokens', COALESCE(employee_daily.tokens, 0)
+              ) ORDER BY days.day)
+              FROM period p
+              CROSS JOIN LATERAL generate_series(p.period_start, p.period_end, interval '1 day') AS days(day)
+              LEFT JOIN daily_usage employee_daily
+                ON employee_daily.github_username = e.github_username
+               AND employee_daily.usage_date = days.day::date
+            ), '[]'::json) AS daily_usage
+     FROM employees e
+     CROSS JOIN period
+     LEFT JOIN monthly_usage ON monthly_usage.github_username = e.github_username
+     WHERE e.project_id = $1 AND e.role = 'employee'
+     ORDER BY e.id`,
+    [projectId, monthStart]
+  );
+  return rows;
+}
+
 async function monthlyAnalyticsForDepartmentHead(db, employeeId, monthStart) {
   const { rows } = await db.query(
     `WITH target_department AS (
@@ -383,6 +427,6 @@ module.exports = {
   usageForUser, usageForProject, allUsage, availableUsageMonths, monthlyModelUsage,
   projectById, employeesOfProject,
   allBilling, allDepartments, allProjects, allEmployees,
-  monthlyUsageForEmployee, monthlyProjectsForManager, monthlyEmployeesForManager, monthlyAnalyticsForDepartmentHead,
+  monthlyUsageForEmployee, monthlyProjectsForManager, monthlyEmployeesForManager, monthlyEmployeesForProject, monthlyAnalyticsForDepartmentHead,
   monthlyUsageForAllDepartments
 };

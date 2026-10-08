@@ -65,7 +65,7 @@ ALTER TABLE projects
 
 CREATE TABLE billing (
     model           VARCHAR(60) PRIMARY KEY,
-    per_token_cost  NUMERIC(14,10) NOT NULL          -- USD per token (blended, illustrative)
+    per_token_cost  NUMERIC(14,10) NOT NULL          -- estimated blended USD per token
 );
 
 CREATE TABLE copilot_usage (

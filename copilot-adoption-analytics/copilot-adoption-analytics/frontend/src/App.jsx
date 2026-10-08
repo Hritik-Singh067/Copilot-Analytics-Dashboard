@@ -368,6 +368,82 @@ function ModelUsageChart({ rows = [] }) {
   );
 }
 
+function formatAIInline(text) {
+  const tokens = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$\\frac\{[^{}]*\}\{[^{}]*\}\$|\\frac\{[^{}]*\}\{[^{}]*\})/g);
+  return tokens.map((token, index) => {
+    if (!token) return null;
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={index}>{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith('*') && token.endsWith('*')) {
+      return <em key={index}>{token.slice(1, -1)}</em>;
+    }
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return <code key={index}>{token.slice(1, -1)}</code>;
+    }
+    if (token.includes('\\frac')) {
+      const fraction = token.match(/\\frac\{([^{}]*)\}\{([^{}]*)\}/);
+      if (fraction) {
+        return <span className="ai-fraction" aria-label={`${fraction[1]} divided by ${fraction[2]}`} key={index}>
+          <span>{fraction[1]}</span><span>{fraction[2]}</span>
+        </span>;
+      }
+    }
+    return token;
+  });
+}
+
+function FormattedAIAnswer({ answer }) {
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let listType = '';
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push(<p key={`p-${blocks.length}`}>{formatAIInline(paragraph.join(' '))}</p>);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      const List = listType === 'ordered' ? 'ol' : 'ul';
+      blocks.push(<List key={`list-${blocks.length}`}>{list.map((item, index) => <li key={index}>{formatAIInline(item)}</li>)}</List>);
+      list = [];
+      listType = '';
+    }
+  };
+
+  answer.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    const bullet = line.match(/^[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push(<h3 key={`h-${blocks.length}`}>{formatAIInline(heading[1])}</h3>);
+    } else if (bullet || ordered) {
+      flushParagraph();
+      const nextListType = ordered ? 'ordered' : 'unordered';
+      if (list.length && listType !== nextListType) flushList();
+      listType = nextListType;
+      list.push((bullet || ordered)[1]);
+    } else {
+      flushList();
+      paragraph.push(line);
+    }
+  });
+  flushParagraph();
+  flushList();
+  return <div className="ai-answer-content">{blocks}</div>;
+}
+
 function AIAnalysisSection({ userId, role, analytics, month }) {
   const [question, setQuestion] = useState('');
   const [turns, setTurns] = useState([]);
@@ -422,7 +498,7 @@ function AIAnalysisSection({ userId, role, analytics, month }) {
         {turns.map((turn, index) => (
           <article className="ai-turn" key={`${index}-${turn.question}`}>
             <div className="ai-question"><span className="eyebrow">YOUR QUESTION</span><p>{turn.question}</p></div>
-            <div className="ai-answer"><span className="eyebrow">AI ANALYSIS</span><p>{turn.answer}</p></div>
+            <div className="ai-answer"><span className="eyebrow">AI ANALYSIS</span><FormattedAIAnswer answer={turn.answer} /></div>
           </article>
         ))}
       </div>}

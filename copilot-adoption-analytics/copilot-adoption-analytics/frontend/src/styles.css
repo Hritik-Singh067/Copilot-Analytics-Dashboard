@@ -220,7 +220,18 @@ button, input { font: inherit; }
 .ai-question { background: #f5f5f5; }
 .ai-answer { border-left: 3px solid var(--red); background: #fbf7f7; }
 .ai-question .eyebrow, .ai-answer .eyebrow { margin-bottom: 7px; font-size: 9px; }
-.ai-question p, .ai-answer p { max-height: none; margin: 0; overflow: visible; color: #333; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-question p, .ai-answer-content { max-height: none; margin: 0; overflow: visible; color: #333; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.ai-answer-content > :first-child { margin-top: 0; }
+.ai-answer-content > :last-child { margin-bottom: 0; }
+.ai-answer-content p { margin: 0 0 10px; white-space: pre-wrap; }
+.ai-answer-content ul, .ai-answer-content ol { margin: 0 0 12px; padding-left: 22px; }
+.ai-answer-content li { padding-left: 3px; margin: 4px 0; }
+.ai-answer-content h3 { margin: 0 0 9px; color: var(--ink); font-size: 15px; font-weight: 700; }
+.ai-answer-content strong { color: var(--ink); font-weight: 800; }
+.ai-answer-content code { padding: 1px 4px; background: #f0e8e9; font: 11px var(--mono); }
+.ai-fraction { display: inline-flex; flex-direction: column; vertical-align: middle; margin: 0 3px; text-align: center; font: 10px/1.2 var(--mono); }
+.ai-fraction > span:first-child { padding: 0 3px 2px; border-bottom: 1px solid currentColor; }
+.ai-fraction > span:last-child { padding: 2px 3px 0; }
 .ai-question-form .form-control { border-color: #cfcfcf; border-radius: 2px; font-size: 13px; resize: vertical; }
 .ai-question-form .form-control:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(200,16,46,.12); }
 .ai-question-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; }

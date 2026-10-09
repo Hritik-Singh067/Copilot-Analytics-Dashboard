@@ -14,7 +14,8 @@ const pool = process.env.DATABASE_URL
       port: Number(process.env.DB_PORT) || 5433,
       database: process.env.DB_NAME || 'copilot_adoption',
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'postgres123'
+      password: process.env.DB_PASSWORD || 'postgres123',
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined
     });
 
 pool.on('error', (err) => console.error('Unexpected Postgres pool error', err));

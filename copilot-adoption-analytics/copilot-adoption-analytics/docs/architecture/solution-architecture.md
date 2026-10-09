@@ -12,6 +12,12 @@ This document describes the implemented prototype and distinguishes current beha
 
 The system boundary contains the frontend and API. PostgreSQL stores the dashboard's application data. Gemini is an external integration used only for user-requested AI analysis. The frontend sends the API user identifier and selected analytics; the AI route verifies that the identifier refers to an employee and removes analytics fields outside its allow-list before calling Gemini. Gemini is not given database credentials or direct database access.
 
+## User and AI Analysis Flow
+
+The following flowchart shows the user journey from sign-in through role-scoped dashboard analysis and optional Gemini recommendations.
+
+![User sign-in, role resolution, analytics retrieval, dashboard review, and optional Gemini analysis flow](./flow-chart.jpeg)
+
 
 ## Components
 

@@ -130,14 +130,10 @@ Set-Location .\src\backend
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Edit `src/backend/.env` locally. Use the same database settings as the Compose service:
+Edit `src/backend/.env` locally. Copy the Neon PostgreSQL connection string from **Neon Console > Connect** and set it as `DATABASE_URL`:
 
 ```env
-DB_HOST=localhost
-DB_PORT=5433
-DB_NAME=copilot_adoption
-DB_USER=postgres
-DB_PASSWORD=postgres
+DATABASE_URL=postgresql://<user>:<password>@<host>/neondb?sslmode=require
 PORT=4000
 
 # Optional; required for AI analysis and AI-powered report summaries.
@@ -145,7 +141,9 @@ GEMINI_API_KEY=your-google-ai-studio-api-key
 GEMINI_MODEL=gemini-3.5-flash
 ```
 
-Keep `.env` local. Do not commit API keys, database passwords, or other secrets, and do not put the Gemini API key in a frontend environment file. The backend also supports `DATABASE_URL` instead of the individual `DB_*` settings.
+Prefer pasting the full connection string copied from Neon rather than assembling it manually; it includes the correct host, role, database, and TLS options. For local Docker PostgreSQL, use `DATABASE_URL=postgresql://postgres:postgres@localhost:5433/copilot_adoption` instead.
+
+Keep `.env` local. Do not commit API keys, database passwords, or other secrets, and do not put the Gemini API key in a frontend environment file. The backend supports `DATABASE_URL` directly, as well as separate `DB_*` settings if needed.
 
 Install dependencies and start the API:
 

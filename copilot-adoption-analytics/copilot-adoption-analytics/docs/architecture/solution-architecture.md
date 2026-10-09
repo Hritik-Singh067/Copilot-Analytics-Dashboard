@@ -12,34 +12,6 @@ This document describes the implemented prototype and distinguishes current beha
 
 The system boundary contains the frontend and API. PostgreSQL stores the dashboard's application data. Gemini is an external integration used only for user-requested AI analysis. The frontend sends the API user identifier and selected analytics; the AI route verifies that the identifier refers to an employee and removes analytics fields outside its allow-list before calling Gemini. Gemini is not given database credentials or direct database access.
 
-flowchart LR
-    User["Employee / Project Manager / Department Head / Executive"]
-    Browser["Web browser"]
-    UI["React + Vite dashboard<br/>Role-scoped charts, drill-down, AI chat, PDF print"]
-    API["Node.js + Express REST API<br/>Port 4000"]
-    Auth["Email login and role lookup"]
-    Analytics["Role-scoped analytics<br/>and monthly aggregation"]
-    AIGateway["AI analysis route<br/>Analytics allow-list and context sanitization"]
-    DB[("PostgreSQL<br/>Employees, departments, projects,<br/>billing rates, Copilot usage")]
-    Gemini["Google Gemini API<br/>AI answers and report recommendations"]
-    PDF["Browser print dialog<br/>Save dashboard report as PDF"]
-    Docker["Docker Compose<br/>Local PostgreSQL service"]
-
-    User --> Browser
-    Browser --> UI
-    UI -->|"HTTPS/HTTP REST: login, data, AI analysis"| API
-    API --> Auth
-    API --> Analytics
-    Auth -->|"Find employee and role"| DB
-    Analytics -->|"Read usage, hierarchy, allocations, billing"| DB
-    API --> AIGateway
-    AIGateway -->|"Sanitized selected analytics context<br/>(no raw usage events)"| Gemini
-    Gemini -->|"Generated analysis and recommendations"| AIGateway
-    AIGateway --> API
-    API -->|"JSON responses"| UI
-    UI --> PDF
-    Docker -. "Runs database locally" .-> DB
-
 
 ## Components
 

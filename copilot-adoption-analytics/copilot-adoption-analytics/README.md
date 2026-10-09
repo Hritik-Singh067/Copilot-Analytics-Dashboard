@@ -71,7 +71,11 @@ Model-cost values are estimates based on blended per-model rates. The mock usage
 
 ## Solution Architecture
 
-The browser-based React dashboard calls the Node.js/Express API for role-scoped analytics and AI analysis. The API reads application data from PostgreSQL and sends only sanitized, aggregated analytics context to Google Gemini when AI assistance is requested. PDF creation uses the browser’s print-to-PDF flow. See the [solution architecture diagram](docs/architecture/solution-architecture.md) for the components, data flows, and prototype boundaries.
+The browser-based React dashboard calls the Node.js/Express API for role-scoped analytics and AI analysis. The API reads application data from PostgreSQL and sends only sanitized, aggregated analytics context to Google Gemini when AI assistance is requested. PDF creation uses the browser’s print-to-PDF flow. See the [solution architecture document](docs/architecture/solution-architecture.md) for the components, data flows, and prototype boundaries.
+
+The end-to-end user and AI analysis workflow is shown below:
+
+![Copilot Adoption Analytics user sign-in, role-based dashboard, analytics, and Gemini-assisted recommendation flow](docs/architecture/flow-chart.jpeg)
 
 ## Setup and Execution
 

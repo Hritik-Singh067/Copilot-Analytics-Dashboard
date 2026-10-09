@@ -3,12 +3,8 @@ const cors = require('cors');
 const pool = require('./db/pool');
 
 const app = express();
-const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://localhost:4173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors());
 app.use(express.json({ limit: '256kb' }));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
